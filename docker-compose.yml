@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # ── FreshRSS ────────────────────────────────────────────────────────────
+  freshrss:
+    image: freshrss/freshrss:latest
+    container_name: freshrss
+    volumes:
+      - freshrss-data:/var/www/FreshRSS/data
+      - freshrss-extensions:/var/www/FreshRSS/extensions
+      # Mount the extension for development:
+      - ./xExtension-AutoFeed:/var/www/FreshRSS/extensions/xExtension-AutoFeed
+    ports:
+      - "8080:80"
+    environment:
+      TZ: Europe/London
+      CRON_MIN: "*/15"
+    restart: unless-stopped
+    depends_on:
+      autofeed-sidecar:
+        condition: service_healthy
+
+  # ── AutoFeed Sidecar ────────────────────────────────────────────────────
+  autofeed-sidecar:
+    build: ./sidecar
+    container_name: autofeed-sidecar
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PLAYWRIGHT_BROWSERS_PATH: "/app/browsers"
+    volumes:
+      - sidecar-data:/app/data
+      - sidecar-browsers:/app/browsers   # Cache Chromium across rebuilds
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    shm_size: '1gb'
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── RSS-Bridge (optional) ──────────────────────────────────────────────
+  rss-bridge:
+    image: rssbridge/rss-bridge:latest
+    container_name: rss-bridge
+    volumes:
+      - ./rss-bridge-config:/config
+      - ./generated-bridges:/config/bridges
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    profiles:
+      - with-rss-bridge   # Only starts with: docker compose --profile with-rss-bridge up
+
+volumes:
+  freshrss-data:
+  freshrss-extensions:
+  sidecar-data:
+  sidecar-browsers:

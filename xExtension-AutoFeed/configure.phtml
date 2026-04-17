@@ -1,0 +1,98 @@
+<form method="post" action="">
+	<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
+
+	<div class="form-group">
+		<h2><?= _t('ext.autofeed.settings_title') ?></h2>
+	</div>
+
+	<!-- Sidecar connection -->
+	<div class="form-group">
+		<label for="sidecar_url"><?= _t('ext.autofeed.sidecar_url') ?></label>
+		<input type="url" id="sidecar_url" name="sidecar_url"
+			value="<?= htmlspecialchars($this->getUserConfigurationString('sidecar_url') ?: 'http://autofeed-sidecar:8000') ?>"
+			placeholder="http://autofeed-sidecar:8000" size="50" />
+		<p class="help"><?= _t('ext.autofeed.sidecar_url_help') ?></p>
+		<button type="button" id="btn-test-sidecar" class="btn btn-secondary"
+			onclick="testSidecar()"><?= _t('ext.autofeed.test_connection') ?></button>
+		<span id="sidecar-status"></span>
+	</div>
+
+	<!-- Default TTL -->
+	<div class="form-group">
+		<label for="default_ttl"><?= _t('ext.autofeed.default_ttl') ?></label>
+		<input type="number" id="default_ttl" name="default_ttl" min="60" step="60"
+			value="<?= intval($this->getUserConfigurationValue('default_ttl') ?: 86400) ?>" />
+		<p class="help"><?= _t('ext.autofeed.default_ttl_help') ?></p>
+	</div>
+
+	<div class="form-group">
+		<h3><?= _t('ext.autofeed.llm_settings') ?></h3>
+		<p class="help"><?= _t('ext.autofeed.llm_settings_help') ?></p>
+	</div>
+
+	<!-- LLM Endpoint -->
+	<div class="form-group">
+		<label for="llm_endpoint"><?= _t('ext.autofeed.llm_endpoint') ?></label>
+		<input type="url" id="llm_endpoint" name="llm_endpoint"
+			value="<?= htmlspecialchars($this->getUserConfigurationString('llm_endpoint')) ?>"
+			placeholder="https://api.openai.com/v1" size="50" />
+	</div>
+
+	<!-- LLM API Key -->
+	<div class="form-group">
+		<label for="llm_api_key"><?= _t('ext.autofeed.llm_api_key') ?></label>
+		<input type="password" id="llm_api_key" name="llm_api_key"
+			value="<?= htmlspecialchars($this->getUserConfigurationString('llm_api_key')) ?>"
+			placeholder="sk-..." size="50" />
+	</div>
+
+	<!-- LLM Model -->
+	<div class="form-group">
+		<label for="llm_model"><?= _t('ext.autofeed.llm_model') ?></label>
+		<input type="text" id="llm_model" name="llm_model"
+			value="<?= htmlspecialchars($this->getUserConfigurationString('llm_model') ?: 'gpt-4o-mini') ?>"
+			placeholder="gpt-4o-mini" size="30" />
+	</div>
+
+	<div class="form-group">
+		<h3><?= _t('ext.autofeed.rss_bridge_settings') ?></h3>
+	</div>
+
+	<!-- RSS-Bridge URL -->
+	<div class="form-group">
+		<label for="rss_bridge_url"><?= _t('ext.autofeed.rss_bridge_url') ?></label>
+		<input type="url" id="rss_bridge_url" name="rss_bridge_url"
+			value="<?= htmlspecialchars($this->getUserConfigurationString('rss_bridge_url')) ?>"
+			placeholder="http://rss-bridge:3000" size="50" />
+		<p class="help"><?= _t('ext.autofeed.rss_bridge_url_help') ?></p>
+	</div>
+
+	<div class="form-group">
+		<button type="submit" class="btn btn-primary"><?= _t('gen.action.submit') ?></button>
+	</div>
+</form>
+
+<script>
+function testSidecar() {
+	var url = document.getElementById('sidecar_url').value.replace(/\/+$/, '') + '/health';
+	var status = document.getElementById('sidecar-status');
+	status.textContent = '⏳ Testing...';
+	status.style.color = '';
+
+	fetch(url, {mode: 'cors'})
+		.then(function(r) { return r.json(); })
+		.then(function(data) {
+			if (data && data.status === 'ok') {
+				status.textContent = '✅ Connected (v' + (data.version || '?') + ')';
+				status.style.color = 'green';
+			} else {
+				status.textContent = '⚠️ Unexpected response';
+				status.style.color = 'orange';
+			}
+		})
+		.catch(function(err) {
+			status.textContent = '❌ Failed: ' + err.message;
+			status.style.color = 'red';
+		});
+}
+</script>

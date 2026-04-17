@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip3.13 --version)",
+      "Bash(pip3 --version)",
+      "Bash(pip --version)",
+      "Bash(/opt/homebrew/bin/python3.10 -c \"import sys; print\\(sys.version\\)\")",
+      "Bash(/opt/homebrew/bin/pip3 --version)",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ]
+  }
+}

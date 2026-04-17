@@ -1,0 +1,240 @@
+<div class="post">
+	<h1><?= _t('ext.autofeed.results_title') ?></h1>
+
+	<?php if (!$this->sidecar_ok): ?>
+		<div class="alert alert-error">
+			<strong><?= _t('ext.autofeed.sidecar_error') ?>:</strong>
+			<?= htmlspecialchars($this->sidecar_error) ?>
+		</div>
+		<p><a href="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'discover']) ?>">&larr; <?= _t('ext.autofeed.back') ?></a></p>
+		<?php return; ?>
+	<?php endif; ?>
+
+	<?php
+		$d = $this->discovery;
+		$results = $d['results'] ?? [];
+		$errors = $d['errors'] ?? [];
+		$meta = $results['page_meta'] ?? [];
+		$rss_feeds = $results['rss_feeds'] ?? [];
+		$api_endpoints = $results['api_endpoints'] ?? [];
+		$embedded_json = $results['embedded_json'] ?? [];
+		$xpath_candidates = $results['xpath_candidates'] ?? [];
+		$has_results = count($rss_feeds) + count($api_endpoints) + count($embedded_json) + count($xpath_candidates) > 0;
+
+		$categories = FreshRSS_Context::categories();
+	?>
+
+	<p>
+		<?= _t('ext.autofeed.results_for') ?>
+		<strong><?= htmlspecialchars($this->target_url) ?></strong>
+		<?php if (!empty($meta['page_title'])): ?>
+			&mdash; <em><?= htmlspecialchars($meta['page_title']) ?></em>
+		<?php endif; ?>
+	</p>
+
+	<?php if (!empty($meta['frameworks_detected'])): ?>
+		<p class="help"><?= _t('ext.autofeed.frameworks_detected') ?>: <?= htmlspecialchars(implode(', ', $meta['frameworks_detected'])) ?></p>
+	<?php endif; ?>
+
+	<?php if (!empty($meta['anti_bot_detected'])): ?>
+		<p class="alert alert-warning"><?= _t('ext.autofeed.anti_bot_warning') ?></p>
+	<?php endif; ?>
+
+	<?php if (!empty($errors)): ?>
+		<details>
+			<summary><?= _t('ext.autofeed.warnings') ?> (<?= count($errors) ?>)</summary>
+			<ul>
+				<?php foreach ($errors as $err): ?>
+					<li><?= htmlspecialchars($err) ?></li>
+				<?php endforeach; ?>
+			</ul>
+		</details>
+	<?php endif; ?>
+
+	<?php if (!$has_results): ?>
+		<div class="alert alert-warning"><?= _t('ext.autofeed.no_results') ?></div>
+		<p><a href="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'discover', 'url' => $this->target_url]) ?>">&larr; <?= _t('ext.autofeed.try_again') ?></a></p>
+		<?php return; ?>
+	<?php endif; ?>
+
+
+	<!-- ═══════════════════ RSS / Atom Feeds ═══════════════════ -->
+	<?php if (!empty($rss_feeds)): ?>
+	<section class="autofeed-section">
+		<h2><?= _t('ext.autofeed.section_rss') ?></h2>
+		<?php foreach ($rss_feeds as $i => $feed): ?>
+		<div class="autofeed-card">
+			<div class="autofeed-card-header">
+				<span class="autofeed-badge autofeed-badge-rss"><?= strtoupper(htmlspecialchars($feed['feed_type'] ?? 'rss')) ?></span>
+				<strong><?= htmlspecialchars($feed['title'] ?: $feed['url']) ?></strong>
+			</div>
+			<code class="autofeed-url"><?= htmlspecialchars($feed['url']) ?></code>
+			<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'apply']) ?>" class="autofeed-apply-form">
+				<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
+				<input type="hidden" name="strategy" value="rss" />
+				<input type="hidden" name="feed_url" value="<?= htmlspecialchars($feed['url']) ?>" />
+				<input type="hidden" name="feed_name" value="<?= htmlspecialchars($feed['title'] ?: $meta['page_title'] ?? '') ?>" />
+				<label><?= _t('ext.autofeed.category') ?>:
+					<select name="category">
+						<?php foreach ($categories as $cat): ?>
+						<option value="<?= $cat->id() ?>"><?= htmlspecialchars($cat->name()) ?></option>
+						<?php endforeach; ?>
+					</select>
+				</label>
+				<button type="submit" class="btn btn-primary"><?= _t('ext.autofeed.subscribe') ?></button>
+			</form>
+		</div>
+		<?php endforeach; ?>
+	</section>
+	<?php endif; ?>
+
+
+	<!-- ═══════════════════ JSON API Endpoints ═══════════════════ -->
+	<?php if (!empty($api_endpoints)): ?>
+	<section class="autofeed-section">
+		<h2><?= _t('ext.autofeed.section_api') ?></h2>
+		<?php foreach ($api_endpoints as $i => $ep): ?>
+		<div class="autofeed-card">
+			<div class="autofeed-card-header">
+				<span class="autofeed-badge autofeed-badge-api">JSON API</span>
+				<span class="autofeed-score"><?= _t('ext.autofeed.score') ?>: <?= number_format(($ep['feed_score'] ?? 0) * 100) ?>%</span>
+			</div>
+			<code class="autofeed-url"><?= htmlspecialchars($ep['url']) ?></code>
+			<?php if (!empty($ep['sample_keys'])): ?>
+				<p class="help"><?= _t('ext.autofeed.fields') ?>: <?= htmlspecialchars(implode(', ', $ep['sample_keys'])) ?>
+					(<?= $ep['item_count'] ?? 0 ?> <?= _t('ext.autofeed.items') ?>)</p>
+			<?php endif; ?>
+			<details>
+				<summary><?= _t('ext.autofeed.configure_mapping') ?></summary>
+				<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'apply']) ?>" class="autofeed-apply-form autofeed-mapping-form">
+					<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
+					<input type="hidden" name="strategy" value="json_dot_notation" />
+					<input type="hidden" name="feed_url" value="<?= htmlspecialchars($ep['url']) ?>" />
+					<input type="hidden" name="feed_name" value="<?= htmlspecialchars($meta['page_title'] ?? '') ?>" />
+
+					<?php
+						// Auto-guess dot-notation paths from sample keys.
+						$keys = $ep['sample_keys'] ?? [];
+						$guessTitle = _guessKey($keys, ['title', 'name', 'headline']);
+						$guessContent = _guessKey($keys, ['content', 'body', 'description', 'summary', 'excerpt']);
+						$guessUri = _guessKey($keys, ['url', 'uri', 'href', 'link', 'permalink', 'slug']);
+						$guessTime = _guessKey($keys, ['date', 'published', 'created', 'timestamp', 'published_at', 'created_at']);
+					?>
+
+					<label>jsonItem: <input type="text" name="jsonItem" value="" placeholder="data.items" size="30" /></label>
+					<label>jsonItemTitle: <input type="text" name="jsonItemTitle" value="<?= htmlspecialchars($guessTitle) ?>" size="30" /></label>
+					<label>jsonItemContent: <input type="text" name="jsonItemContent" value="<?= htmlspecialchars($guessContent) ?>" size="30" /></label>
+					<label>jsonItemUri: <input type="text" name="jsonItemUri" value="<?= htmlspecialchars($guessUri) ?>" size="30" /></label>
+					<label>jsonItemTimestamp: <input type="text" name="jsonItemTimestamp" value="<?= htmlspecialchars($guessTime) ?>" size="30" /></label>
+
+					<label><?= _t('ext.autofeed.category') ?>:
+						<select name="category">
+							<?php foreach ($categories as $cat): ?>
+							<option value="<?= $cat->id() ?>"><?= htmlspecialchars($cat->name()) ?></option>
+							<?php endforeach; ?>
+						</select>
+					</label>
+					<button type="submit" class="btn btn-primary"><?= _t('ext.autofeed.subscribe') ?></button>
+				</form>
+			</details>
+		</div>
+		<?php endforeach; ?>
+	</section>
+	<?php endif; ?>
+
+
+	<!-- ═══════════════════ Embedded JSON ═══════════════════ -->
+	<?php if (!empty($embedded_json)): ?>
+	<section class="autofeed-section">
+		<h2><?= _t('ext.autofeed.section_embedded') ?></h2>
+		<?php foreach ($embedded_json as $i => $ej): ?>
+		<div class="autofeed-card">
+			<div class="autofeed-card-header">
+				<span class="autofeed-badge autofeed-badge-json">Embedded JSON</span>
+				<span class="autofeed-score"><?= _t('ext.autofeed.score') ?>: <?= number_format(($ej['feed_score'] ?? 0) * 100) ?>%</span>
+			</div>
+			<p>
+				<strong><?= _t('ext.autofeed.source') ?>:</strong> <code><?= htmlspecialchars($ej['source'] ?? '') ?></code><br/>
+				<strong><?= _t('ext.autofeed.path') ?>:</strong> <code><?= htmlspecialchars($ej['path'] ?? '') ?></code>
+			</p>
+			<?php if (!empty($ej['sample_keys'])): ?>
+				<p class="help"><?= _t('ext.autofeed.fields') ?>: <?= htmlspecialchars(implode(', ', $ej['sample_keys'])) ?>
+					(<?= $ej['item_count'] ?? 0 ?> <?= _t('ext.autofeed.items') ?>)</p>
+			<?php endif; ?>
+			<p class="help"><?= _t('ext.autofeed.embedded_note') ?></p>
+		</div>
+		<?php endforeach; ?>
+	</section>
+	<?php endif; ?>
+
+
+	<!-- ═══════════════════ XPath Candidates ═══════════════════ -->
+	<?php if (!empty($xpath_candidates)): ?>
+	<section class="autofeed-section">
+		<h2><?= _t('ext.autofeed.section_xpath') ?></h2>
+		<?php foreach ($xpath_candidates as $i => $xp): ?>
+		<div class="autofeed-card">
+			<div class="autofeed-card-header">
+				<span class="autofeed-badge autofeed-badge-xpath">XPath</span>
+				<span class="autofeed-score"><?= _t('ext.autofeed.confidence') ?>: <?= number_format(($xp['confidence'] ?? 0) * 100) ?>%</span>
+				<span>(<?= $xp['item_count'] ?? 0 ?> <?= _t('ext.autofeed.items') ?>)</span>
+			</div>
+			<details>
+				<summary><code><?= htmlspecialchars($xp['item_selector'] ?? '') ?></code></summary>
+				<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'apply']) ?>" class="autofeed-apply-form autofeed-mapping-form">
+					<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
+					<input type="hidden" name="strategy" value="xpath" />
+					<input type="hidden" name="feed_url" value="<?= htmlspecialchars($this->target_url) ?>" />
+					<input type="hidden" name="feed_name" value="<?= htmlspecialchars($meta['page_title'] ?? '') ?>" />
+
+					<label>xPathItem: <input type="text" name="xPathItem" value="<?= htmlspecialchars($xp['item_selector'] ?? '') ?>" size="50" /></label>
+					<label>xPathItemTitle: <input type="text" name="xPathItemTitle" value="<?= htmlspecialchars($xp['title_selector'] ?? '') ?>" size="50" /></label>
+					<label>xPathItemContent: <input type="text" name="xPathItemContent" value="<?= htmlspecialchars($xp['content_selector'] ?? '') ?>" size="50" /></label>
+					<label>xPathItemUri: <input type="text" name="xPathItemUri" value="<?= htmlspecialchars($xp['link_selector'] ?? '') ?>" size="50" /></label>
+					<label>xPathItemTimestamp: <input type="text" name="xPathItemTimestamp" value="<?= htmlspecialchars($xp['timestamp_selector'] ?? '') ?>" size="50" /></label>
+					<label>xPathItemThumbnail: <input type="text" name="xPathItemThumbnail" value="<?= htmlspecialchars($xp['thumbnail_selector'] ?? '') ?>" size="50" /></label>
+
+					<label><?= _t('ext.autofeed.category') ?>:
+						<select name="category">
+							<?php foreach ($categories as $cat): ?>
+							<option value="<?= $cat->id() ?>"><?= htmlspecialchars($cat->name()) ?></option>
+							<?php endforeach; ?>
+						</select>
+					</label>
+					<button type="submit" class="btn btn-primary"><?= _t('ext.autofeed.subscribe') ?></button>
+				</form>
+			</details>
+		</div>
+		<?php endforeach; ?>
+	</section>
+	<?php endif; ?>
+
+
+	<p style="margin-top: 2em;">
+		<a href="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'discover', 'url' => $this->target_url]) ?>">&larr; <?= _t('ext.autofeed.try_again') ?></a>
+	</p>
+</div>
+
+<?php
+/**
+ * Guess the best matching key from a list of sample keys.
+ */
+function _guessKey(array $sampleKeys, array $candidates): string {
+	foreach ($candidates as $c) {
+		foreach ($sampleKeys as $k) {
+			if (strtolower($k) === strtolower($c)) {
+				return $k;
+			}
+		}
+	}
+	// Partial match.
+	foreach ($candidates as $c) {
+		foreach ($sampleKeys as $k) {
+			if (stripos($k, $c) !== false) {
+				return $k;
+			}
+		}
+	}
+	return '';
+}
+?>

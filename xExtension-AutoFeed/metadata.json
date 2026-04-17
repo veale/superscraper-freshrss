@@ -1,0 +1,8 @@
+{
+	"name": "AutoFeed Discovery",
+	"author": "AutoFeed Contributors",
+	"description": "Automatically discovers and configures feed sources from any URL using heuristic analysis, network interception, and optional LLM assistance.",
+	"version": "0.1.0",
+	"entrypoint": "AutoFeed",
+	"type": "user"
+}
