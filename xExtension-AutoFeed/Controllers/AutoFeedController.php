@@ -115,6 +115,112 @@ class FreshExtension_AutoFeed_Controller extends Minz_ActionController {
 	}
 
 	/**
+	 * POST — Generate an RSS-Bridge PHP script via the sidecar LLM.
+	 */
+	public function bridgeGenerateAction(): void {
+		if (!Minz_Request::isPost()) {
+			Minz_Request::forward(['c' => 'AutoFeed', 'a' => 'discover'], true);
+			return;
+		}
+
+		$ext = Minz_ExtensionManager::findExtension('AutoFeed');
+		if ($ext === null || !$ext->hasLlmConfigured()) {
+			Minz_Request::bad(_t('ext.autofeed.llm_not_configured'));
+			Minz_Request::forward(['c' => 'AutoFeed', 'a' => 'discover'], true);
+			return;
+		}
+
+		$discovery_json_b64 = Minz_Request::paramString('discovery_json');
+		$discovery = [];
+		if ($discovery_json_b64 !== '') {
+			$decoded = base64_decode($discovery_json_b64, true);
+			if ($decoded !== false) {
+				$discovery = json_decode($decoded, true) ?: [];
+			}
+		}
+
+		$url     = $discovery['url'] ?? '';
+		$results = $discovery['results'] ?? [];
+		$hint    = trim(Minz_Request::paramString('hint'));
+
+		$result = $ext->sidecarRequest('/bridge/generate', [
+			'url'           => $url,
+			'results'       => $results,
+			'html_skeleton' => $results['html_skeleton'] ?? '',
+			'llm'           => [
+				'endpoint' => $ext->getLlmEndpoint(),
+				'api_key'  => $ext->getLlmApiKey(),
+				'model'    => $ext->getLlmModel(),
+				'timeout'  => 90,
+			],
+			'hint' => $hint,
+		], 'POST', 120);
+
+		Minz_View::prependTitle(_t('ext.autofeed.bridge_generated_title') . ' · ');
+		$this->view->bridge_error     = '';
+		$this->view->bridge_name      = '';
+		$this->view->php_code         = '';
+		$this->view->sanity_warnings  = [];
+		$this->view->deployed         = false;
+
+		if (!$result['ok']) {
+			$this->view->bridge_error = $result['error'];
+		} else {
+			$data = $result['data'] ?? [];
+			if (!empty($data['errors'])) {
+				$this->view->bridge_error = implode('; ', $data['errors']);
+			} else {
+				$this->view->bridge_name     = $data['bridge_name'] ?? '';
+				$this->view->php_code        = $data['php_code'] ?? '';
+				$this->view->sanity_warnings = $data['sanity_warnings'] ?? [];
+			}
+		}
+	}
+
+	/**
+	 * POST — Deploy a generated bridge file via the sidecar.
+	 */
+	public function bridgeDeployAction(): void {
+		if (!Minz_Request::isPost()) {
+			Minz_Request::forward(['c' => 'AutoFeed', 'a' => 'discover'], true);
+			return;
+		}
+
+		$ext = Minz_ExtensionManager::findExtension('AutoFeed');
+		if ($ext === null || !$ext->getAutoDeployBridges()) {
+			Minz_Request::bad('Bridge auto-deploy is not enabled.');
+			Minz_Request::forward(['c' => 'AutoFeed', 'a' => 'discover'], true);
+			return;
+		}
+
+		$bridge_name = trim(Minz_Request::paramString('bridge_name'));
+		$php_code    = Minz_Request::paramString('php_code');
+
+		$result = $ext->sidecarRequest('/bridge/deploy', [
+			'bridge_name' => $bridge_name,
+			'php_code'    => $php_code,
+		], 'POST', 30);
+
+		Minz_View::prependTitle(_t('ext.autofeed.bridge_generated_title') . ' · ');
+		$this->view->bridge_error    = '';
+		$this->view->bridge_name     = $bridge_name;
+		$this->view->php_code        = $php_code;
+		$this->view->sanity_warnings = [];
+		$this->view->deployed        = false;
+
+		if (!$result['ok']) {
+			$this->view->bridge_error = $result['error'];
+		} else {
+			$data = $result['data'] ?? [];
+			if (!empty($data['errors'])) {
+				$this->view->bridge_error = implode('; ', $data['errors']);
+			} else {
+				$this->view->deployed = (bool) ($data['deployed'] ?? false);
+			}
+		}
+	}
+
+	/**
 	 * POST — Apply a discovered feed configuration.
 	 *
 	 * Creates a new feed subscription in FreshRSS based on the strategy

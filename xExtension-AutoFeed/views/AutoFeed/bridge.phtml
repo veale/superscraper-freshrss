@@ -1,0 +1,90 @@
+<div class="post">
+	<h1><?= _t('ext.autofeed.bridge_generated_title') ?></h1>
+
+	<?php if (!empty($this->bridge_error)): ?>
+		<div class="alert alert-error">
+			<strong><?= _t('ext.autofeed.error_bridge_generic') ?>:</strong>
+			<?= htmlspecialchars($this->bridge_error) ?>
+		</div>
+		<p><a href="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'discover']) ?>">&larr; <?= _t('ext.autofeed.back') ?></a></p>
+		<?php return; ?>
+	<?php endif; ?>
+
+	<?php if (!empty($this->sanity_warnings)): ?>
+		<div class="alert alert-warning">
+			<strong>Sanity warnings:</strong>
+			<ul>
+				<?php foreach ($this->sanity_warnings as $w): ?>
+					<li><?= htmlspecialchars($w) ?></li>
+				<?php endforeach; ?>
+			</ul>
+		</div>
+	<?php endif; ?>
+
+	<p>
+		<strong><?= _t('ext.autofeed.bridge_php_label') ?>:</strong>
+		<code><?= htmlspecialchars($this->bridge_name) ?>.php</code>
+	</p>
+
+	<!-- Code display + copy -->
+	<div class="autofeed-bridge-code">
+		<button class="btn btn-secondary"
+			data-autofeed-copy="#bridge-php-code"
+			data-copied-text="<?= _t('ext.autofeed.bridge_copied') ?>">
+			<?= _t('ext.autofeed.bridge_copy') ?>
+		</button>
+		<pre id="bridge-php-code"><?= htmlspecialchars($this->php_code) ?></pre>
+	</div>
+
+	<?php
+		$ext        = Minz_ExtensionManager::findExtension('AutoFeed');
+		$can_deploy = $ext !== null && $ext->getAutoDeployBridges();
+		$bridge_url = $ext !== null ? $ext->getRssBridgeUrl() : '';
+	?>
+
+	<?php if (!$this->deployed): ?>
+		<?php if ($can_deploy): ?>
+			<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'bridgeDeploy']) ?>">
+				<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
+				<input type="hidden" name="bridge_name" value="<?= htmlspecialchars($this->bridge_name) ?>" />
+				<input type="hidden" name="php_code" value="<?= htmlspecialchars($this->php_code) ?>" />
+				<button type="submit" class="btn btn-primary"
+					data-autofeed-spinner
+					data-spinner-text="Deploying…">
+					<?= _t('ext.autofeed.bridge_deploy_btn') ?>
+				</button>
+			</form>
+		<?php else: ?>
+			<p class="help">
+				Auto-deploy is disabled. Copy the PHP above and place it in your RSS-Bridge
+				<code>bridges/</code> directory, or enable <em><?= _t('ext.autofeed.auto_deploy_bridges') ?></em>
+				in Settings.
+			</p>
+		<?php endif; ?>
+	<?php else: ?>
+		<div class="alert alert-success">
+			<strong><?= _t('ext.autofeed.bridge_deployed') ?></strong>
+			<?php if ($bridge_url): ?>
+				<?php
+					$subscribe_url = $bridge_url
+						. '/?action=display&bridge=' . urlencode($this->bridge_name)
+						. '&format=Atom';
+				?>
+				&mdash;
+				<a href="<?= htmlspecialchars(Minz_Url::display([
+					'c' => 'subscription',
+					'a' => 'add',
+					'url' => $subscribe_url,
+				])) ?>" class="btn btn-primary">
+					<?= _t('ext.autofeed.bridge_subscribe') ?>
+				</a>
+			<?php else: ?>
+				Start the RSS-Bridge service to serve this bridge, then subscribe via its URL.
+			<?php endif; ?>
+		</div>
+	<?php endif; ?>
+
+	<p style="margin-top: 2em;">
+		<a href="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'discover']) ?>">&larr; <?= _t('ext.autofeed.back') ?></a>
+	</p>
+</div>

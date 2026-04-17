@@ -32,6 +32,7 @@ services:
     volumes:
       - sidecar-data:/app/data
       - sidecar-browsers:/app/browsers   # Cache Chromium across rebuilds
+      - ./generated-bridges:/app/bridges
     deploy:
       resources:
         limits:

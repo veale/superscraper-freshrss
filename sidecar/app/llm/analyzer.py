@@ -1,12 +1,14 @@
-"""LLM-backed strategy analyzer for AutoFeed Phase 3."""
+"""LLM-backed strategy analyzer and bridge generator for AutoFeed Phase 3."""
 from __future__ import annotations
 
 from app.llm import LLMAuth, LLMError, LLMMalformed, LLMTimeout
 from app.llm.client import LLMClient
-from app.llm.prompts import render_strategy_prompt
+from app.llm.prompts import render_bridge_prompt, render_strategy_prompt
 from app.models.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    BridgeGenerateRequest,
+    BridgeGenerateResponse,
     FeedStrategy,
     LLMRecommendation,
 )
@@ -74,3 +76,68 @@ async def recommend_strategy(req: AnalyzeRequest) -> AnalyzeResponse:
         llm_raw=raw,
         tokens_used=result.tokens_used,
     )
+
+
+async def generate_bridge(req: BridgeGenerateRequest) -> BridgeGenerateResponse:
+    """Call the LLM to generate an RSS-Bridge PHP script."""
+    client = LLMClient(
+        endpoint=req.llm.endpoint,
+        api_key=req.llm.api_key,
+        model=req.llm.model,
+        timeout=req.llm.timeout,
+    )
+    system, user = render_bridge_prompt(req)
+
+    try:
+        result = await client.chat_completion(system, user)
+    except LLMTimeout as exc:
+        return BridgeGenerateResponse(errors=[f"LLM timeout: {exc}"])
+    except LLMAuth as exc:
+        return BridgeGenerateResponse(errors=[f"LLM auth error: {exc}"])
+    except LLMMalformed as exc:
+        return BridgeGenerateResponse(errors=[f"LLM malformed response: {exc}"])
+    except LLMError as exc:
+        return BridgeGenerateResponse(errors=[f"LLM error: {exc}"])
+
+    raw = result.content
+    bridge_name = str(raw.get("bridge_name", "")).strip()
+    php_code = str(raw.get("php_code", "")).strip()
+
+    if not bridge_name or not php_code:
+        return BridgeGenerateResponse(
+            errors=["LLM did not return both bridge_name and php_code fields"],
+        )
+
+    warnings = _sanity_check_php(bridge_name, php_code)
+
+    return BridgeGenerateResponse(
+        bridge_name=bridge_name,
+        filename=f"{bridge_name}.php",
+        php_code=php_code,
+        sanity_warnings=warnings,
+    )
+
+
+def _sanity_check_php(bridge_name: str, code: str) -> list[str]:
+    warnings: list[str] = []
+
+    if not code.lstrip().startswith("<?php"):
+        warnings.append("PHP code does not start with <?php")
+
+    if "?>" in code:
+        warnings.append("PHP closing tag ?> found — omit it per RSS-Bridge convention")
+
+    if "extends BridgeAbstract" not in code:
+        warnings.append("Class does not extend BridgeAbstract")
+
+    if f"class {bridge_name}Bridge" not in code:
+        warnings.append(f"Expected class '{bridge_name}Bridge' not found in code")
+
+    if "collectData" not in code:
+        warnings.append("Missing collectData() method")
+
+    for danger in ("shell_exec", "exec(", "system(", "passthru(", "eval("):
+        if danger in code:
+            warnings.append(f"Potentially dangerous call: {danger}")
+
+    return warnings

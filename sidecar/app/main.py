@@ -9,15 +9,24 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.discovery.cascade import run_discovery
 from app.discovery.network_intercept import close_browser
+import os
+
+from app.bridge.deploy import deploy_bridge as _deploy_bridge
 from app.llm import LLMError
-from app.llm.analyzer import recommend_strategy
+from app.llm.analyzer import generate_bridge, recommend_strategy
 from app.models.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    BridgeDeployRequest,
+    BridgeDeployResponse,
+    BridgeGenerateRequest,
+    BridgeGenerateResponse,
     DiscoverRequest,
     DiscoverResponse,
     HealthResponse,
 )
+
+_BRIDGES_DIR = os.getenv("AUTOFEED_BRIDGES_DIR", "/app/bridges")
 
 
 @asynccontextmanager
@@ -63,3 +72,18 @@ async def _llm_error_handler(request, exc: LLMError):
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
     return await recommend_strategy(req)
+
+
+@app.post("/bridge/generate", response_model=BridgeGenerateResponse)
+async def bridge_generate(req: BridgeGenerateRequest) -> BridgeGenerateResponse:
+    return await generate_bridge(req)
+
+
+@app.post("/bridge/deploy", response_model=BridgeDeployResponse)
+async def bridge_deploy(req: BridgeDeployRequest) -> BridgeDeployResponse:
+    result = _deploy_bridge(req.bridge_name, req.php_code, bridges_dir=_BRIDGES_DIR)
+    return BridgeDeployResponse(
+        deployed=result.deployed,
+        path=result.path,
+        errors=result.errors,
+    )
