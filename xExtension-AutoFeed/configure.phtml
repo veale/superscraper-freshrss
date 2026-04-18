@@ -9,7 +9,7 @@
 	<div class="form-group">
 		<label for="sidecar_url"><?= _t('ext.autofeed.sidecar_url') ?></label>
 		<input type="url" id="sidecar_url" name="sidecar_url"
-			value="<?= htmlspecialchars($this->getUserConfigurationString('sidecar_url') ?: 'http://autofeed-sidecar:8000') ?>"
+			value="<?= htmlspecialchars($this->getUserConfigurationValue('sidecar_url') ?: 'http://autofeed-sidecar:8000') ?>"
 			placeholder="http://autofeed-sidecar:8000" size="50" />
 		<p class="help"><?= _t('ext.autofeed.sidecar_url_help') ?></p>
 		<button type="button" id="btn-test-sidecar" class="btn btn-secondary"
@@ -34,7 +34,7 @@
 	<div class="form-group">
 		<label for="llm_endpoint"><?= _t('ext.autofeed.llm_endpoint') ?></label>
 		<input type="url" id="llm_endpoint" name="llm_endpoint"
-			value="<?= htmlspecialchars($this->getUserConfigurationString('llm_endpoint')) ?>"
+			value="<?= htmlspecialchars($this->getUserConfigurationValue('llm_endpoint')) ?>"
 			placeholder="https://api.openai.com/v1" size="50" />
 	</div>
 
@@ -51,7 +51,7 @@
 	<div class="form-group">
 		<label for="llm_model"><?= _t('ext.autofeed.llm_model') ?></label>
 		<input type="text" id="llm_model" name="llm_model"
-			value="<?= htmlspecialchars($this->getUserConfigurationString('llm_model') ?: 'gpt-4o-mini') ?>"
+			value="<?= htmlspecialchars($this->getUserConfigurationValue('llm_model') ?: 'gpt-4o-mini') ?>"
 			placeholder="gpt-4o-mini" size="30" />
 	</div>
 
@@ -63,7 +63,7 @@
 	<div class="form-group">
 		<label for="rss_bridge_url"><?= _t('ext.autofeed.rss_bridge_url') ?></label>
 		<input type="url" id="rss_bridge_url" name="rss_bridge_url"
-			value="<?= htmlspecialchars($this->getUserConfigurationString('rss_bridge_url')) ?>"
+			value="<?= htmlspecialchars($this->getUserConfigurationValue('rss_bridge_url')) ?>"
 			placeholder="http://rss-bridge:3000" size="50" />
 		<p class="help"><?= _t('ext.autofeed.rss_bridge_url_help') ?></p>
 	</div>
@@ -75,10 +75,10 @@
 		<div class="form-group">
 			<label for="fetch_backend"><?= _t('ext.autofeed.fetch_backend') ?></label>
 			<select id="fetch_backend" name="fetch_backend">
-				<option value="bundled" <?= ($this->getUserConfigurationString('fetch_backend') ?: 'bundled') === 'bundled' ? 'selected' : '' ?>><?= _t('ext.autofeed.fetch_backend_bundled') ?></option>
-				<option value="playwright_server" <?= ($this->getUserConfigurationString('fetch_backend') ?: 'bundled') === 'playwright_server' ? 'selected' : '' ?>><?= _t('ext.autofeed.fetch_backend_playwright') ?></option>
-				<option value="browserless" <?= ($this->getUserConfigurationString('fetch_backend') ?: 'bundled') === 'browserless' ? 'selected' : '' ?>><?= _t('ext.autofeed.fetch_backend_browserless') ?></option>
-				<option value="scrapling_serve" <?= ($this->getUserConfigurationString('fetch_backend') ?: 'bundled') === 'scrapling_serve' ? 'selected' : '' ?>><?= _t('ext.autofeed.fetch_backend_scrapling') ?></option>
+				<option value="bundled" <?= ($this->getUserConfigurationValue('fetch_backend') ?: 'bundled') === 'bundled' ? 'selected' : '' ?>><?= _t('ext.autofeed.fetch_backend_bundled') ?></option>
+				<option value="playwright_server" <?= ($this->getUserConfigurationValue('fetch_backend') ?: 'bundled') === 'playwright_server' ? 'selected' : '' ?>><?= _t('ext.autofeed.fetch_backend_playwright') ?></option>
+				<option value="browserless" <?= ($this->getUserConfigurationValue('fetch_backend') ?: 'bundled') === 'browserless' ? 'selected' : '' ?>><?= _t('ext.autofeed.fetch_backend_browserless') ?></option>
+				<option value="scrapling_serve" <?= ($this->getUserConfigurationValue('fetch_backend') ?: 'bundled') === 'scrapling_serve' ? 'selected' : '' ?>><?= _t('ext.autofeed.fetch_backend_scrapling') ?></option>
 			</select>
 		</div>
 
@@ -86,7 +86,7 @@
 			<label for="playwright_server_url"><?= _t('ext.autofeed.playwright_server_url') ?></label>
 			<input type="text" id="playwright_server_url" name="playwright_server_url"
 				placeholder="ws://playwright-server:3000/"
-				value="<?= htmlspecialchars($this->getUserConfigurationString('playwright_server_url')) ?>" size="60" />
+				value="<?= htmlspecialchars($this->getUserConfigurationValue('playwright_server_url')) ?>" size="60" />
 			<p class="help"><?= _t('ext.autofeed.playwright_server_url_help') ?></p>
 		</div>
 
@@ -94,7 +94,7 @@
 			<label for="browserless_url"><?= _t('ext.autofeed.browserless_url') ?></label>
 			<input type="text" id="browserless_url" name="browserless_url"
 				placeholder="ws://browserless:3000?token=..."
-				value="<?= htmlspecialchars($this->getUserConfigurationString('browserless_url')) ?>" size="60" />
+				value="<?= htmlspecialchars($this->getUserConfigurationValue('browserless_url')) ?>" size="60" />
 			<p class="help"><?= _t('ext.autofeed.browserless_url_help') ?></p>
 		</div>
 
@@ -102,7 +102,7 @@
 			<label for="scrapling_serve_url"><?= _t('ext.autofeed.scrapling_serve_url') ?></label>
 			<input type="text" id="scrapling_serve_url" name="scrapling_serve_url"
 				placeholder="http://scrapling-serve:8001"
-				value="<?= htmlspecialchars($this->getUserConfigurationString('scrapling_serve_url')) ?>" size="60" />
+				value="<?= htmlspecialchars($this->getUserConfigurationValue('scrapling_serve_url')) ?>" size="60" />
 			<p class="help"><?= _t('ext.autofeed.scrapling_serve_url_help') ?></p>
 		</div>
 
@@ -110,7 +110,7 @@
 			<label for="services_auth_token"><?= _t('ext.autofeed.services_auth_token') ?></label>
 			<input type="password" id="services_auth_token" name="services_auth_token"
 				placeholder="Optional bearer token"
-				value="<?= htmlspecialchars($this->getUserConfigurationString('services_auth_token')) ?>" size="40" />
+				value="<?= htmlspecialchars($this->getUserConfigurationValue('services_auth_token')) ?>" size="40" />
 			<p class="help"><?= _t('ext.autofeed.services_auth_token_help') ?></p>
 		</div>
 
@@ -118,7 +118,7 @@
 			<label for="sidecar_auth_token"><?= _t('ext.autofeed.sidecar_auth_token') ?></label>
 			<input type="password" id="sidecar_auth_token" name="sidecar_auth_token"
 				placeholder="Optional bearer token"
-				value="<?= htmlspecialchars($this->getUserConfigurationString('sidecar_auth_token')) ?>" size="40" />
+				value="<?= htmlspecialchars($this->getUserConfigurationValue('sidecar_auth_token')) ?>" size="40" />
 			<p class="help"><?= _t('ext.autofeed.sidecar_auth_token_help') ?></p>
 		</div>
 	</details>
@@ -127,9 +127,9 @@
 	<div class="form-group">
 		<label for="rss_bridge_deploy_mode"><?= _t('ext.autofeed.rss_bridge_deploy_mode') ?></label>
 		<select name="rss_bridge_deploy_mode" id="rss_bridge_deploy_mode">
-			<option value="auto" <?= $this->getUserConfigurationString('rss_bridge_deploy_mode') !== 'local_only' && $this->getUserConfigurationString('rss_bridge_deploy_mode') !== 'remote_only' ? 'selected' : '' ?>><?= _t('ext.autofeed.rss_bridge_deploy_mode_auto') ?></option>
-			<option value="local_only" <?= $this->getUserConfigurationString('rss_bridge_deploy_mode') === 'local_only' ? 'selected' : '' ?>><?= _t('ext.autofeed.rss_bridge_deploy_mode_local') ?></option>
-			<option value="remote_only" <?= $this->getUserConfigurationString('rss_bridge_deploy_mode') === 'remote_only' ? 'selected' : '' ?>><?= _t('ext.autofeed.rss_bridge_deploy_mode_remote') ?></option>
+			<option value="auto" <?= $this->getUserConfigurationValue('rss_bridge_deploy_mode') !== 'local_only' && $this->getUserConfigurationValue('rss_bridge_deploy_mode') !== 'remote_only' ? 'selected' : '' ?>><?= _t('ext.autofeed.rss_bridge_deploy_mode_auto') ?></option>
+			<option value="local_only" <?= $this->getUserConfigurationValue('rss_bridge_deploy_mode') === 'local_only' ? 'selected' : '' ?>><?= _t('ext.autofeed.rss_bridge_deploy_mode_local') ?></option>
+			<option value="remote_only" <?= $this->getUserConfigurationValue('rss_bridge_deploy_mode') === 'remote_only' ? 'selected' : '' ?>><?= _t('ext.autofeed.rss_bridge_deploy_mode_remote') ?></option>
 		</select>
 		<p class="help"><?= _t('ext.autofeed.rss_bridge_deploy_mode_help') ?></p>
 	</div>
@@ -144,8 +144,8 @@
 		<p class="help"><?= _t('ext.autofeed.auto_deploy_bridges_help') ?></p>
 		<p class="alert alert-warning"><?= _t('ext.autofeed.auto_deploy_bridges_warning') ?></p>
 			<?php
-				$rss_bridge_url = trim($this->getUserConfigurationString('rss_bridge_url') ?? '');
-				$deploy_mode = $this->getUserConfigurationString('rss_bridge_deploy_mode') ?? 'auto';
+				$rss_bridge_url = trim($this->getUserConfigurationValue('rss_bridge_url') ?? '');
+				$deploy_mode = $this->getUserConfigurationValue('rss_bridge_deploy_mode') ?? 'auto';
 				$auto_deploy = $this->getUserConfigurationValue('auto_deploy_bridges');
 				// Show warning if auto-deploy is enabled with a remote RSS-Bridge URL but deploy mode is auto (local wins)
 				if ($auto_deploy && !empty($rss_bridge_url) && $deploy_mode === 'auto'):
@@ -163,35 +163,35 @@
 				<label for="sftp_host"><?= _t('ext.autofeed.sftp_host') ?></label>
 				<input type="text" id="sftp_host" name="sftp_host"
 					placeholder="e.g., rss-bridge.example.com"
-					value="<?= htmlspecialchars($this->getUserConfigurationString('sftp_host') ?? '') ?>" size="40" />
+					value="<?= htmlspecialchars($this->getUserConfigurationValue('sftp_host') ?? '') ?>" size="40" />
 			</div>
 	
 			<div class="form-group">
 				<label for="sftp_port"><?= _t('ext.autofeed.sftp_port') ?></label>
 				<input type="number" id="sftp_port" name="sftp_port"
 					placeholder="22"
-					value="<?= htmlspecialchars($this->getUserConfigurationString('sftp_port') ?? '22') ?>" size="10" />
+					value="<?= htmlspecialchars($this->getUserConfigurationValue('sftp_port') ?? '22') ?>" size="10" />
 			</div>
 	
 			<div class="form-group">
 				<label for="sftp_user"><?= _t('ext.autofeed.sftp_user') ?></label>
 				<input type="text" id="sftp_user" name="sftp_user"
 					placeholder="username"
-					value="<?= htmlspecialchars($this->getUserConfigurationString('sftp_user') ?? '') ?>" size="30" />
+					value="<?= htmlspecialchars($this->getUserConfigurationValue('sftp_user') ?? '') ?>" size="30" />
 			</div>
 	
 			<div class="form-group">
 				<label for="sftp_key_path"><?= _t('ext.autofeed.sftp_key_path') ?></label>
 				<input type="text" id="sftp_key_path" name="sftp_key_path"
 					placeholder="~/.ssh/id_rsa"
-					value="<?= htmlspecialchars($this->getUserConfigurationString('sftp_key_path') ?? '') ?>" size="50" />
+					value="<?= htmlspecialchars($this->getUserConfigurationValue('sftp_key_path') ?? '') ?>" size="50" />
 			</div>
 	
 			<div class="form-group">
 				<label for="sftp_target_dir"><?= _t('ext.autofeed.sftp_target_dir') ?></label>
 				<input type="text" id="sftp_target_dir" name="sftp_target_dir"
 					placeholder="/var/www/rss-bridge/bridges"
-					value="<?= htmlspecialchars($this->getUserConfigurationString('sftp_target_dir') ?? '') ?>" size="50" />
+					value="<?= htmlspecialchars($this->getUserConfigurationValue('sftp_target_dir') ?? '') ?>" size="50" />
 			</div>
 	
 			<div class="form-group">

@@ -70,23 +70,51 @@ final class AutoFeedExtension extends Minz_Extension {
 			$llm_model = trim(Minz_Request::paramString('llm_model')) ?: 'gpt-4o-mini';
 			$llm_api_key_submitted = Minz_Request::paramString('llm_api_key');
 
+			$rss_bridge_url = trim(Minz_Request::paramString('rss_bridge_url'));
+			$rss_bridge_deploy_mode = Minz_Request::paramString('rss_bridge_deploy_mode') ?: 'auto';
+			$fetch_backend = Minz_Request::paramString('fetch_backend');
+			$playwright_server_url = trim(Minz_Request::paramString('playwright_server_url'));
+			$browserless_url = trim(Minz_Request::paramString('browserless_url'));
+			$scrapling_serve_url = trim(Minz_Request::paramString('scrapling_serve_url'));
+			$services_auth_token = Minz_Request::paramString('services_auth_token');
+			$sidecar_auth_token = Minz_Request::paramString('sidecar_auth_token');
+
+			$sftp_host = trim(Minz_Request::paramString('sftp_host'));
+			$sftp_port = Minz_Request::paramString('sftp_port') ?: '22';
+			$sftp_user = trim(Minz_Request::paramString('sftp_user'));
+			$sftp_key_path = trim(Minz_Request::paramString('sftp_key_path'));
+			$sftp_target_dir = trim(Minz_Request::paramString('sftp_target_dir'));
+
+			// Start from existing config so keys not in this form are not lost.
+			$conf = $this->getUserConfiguration() ?? [];
+
 			// Only update API key if it's not the masked placeholder
 			if (!$this->isMaskedApiKey($llm_api_key_submitted)) {
-				$this->setUserConfigurationValue('llm_api_key', $llm_api_key_submitted);
+				$conf['llm_api_key'] = $llm_api_key_submitted;
 			}
 
-			$this->setUserConfigurationValue('sidecar_url', $sidecar_url);
-			$this->setUserConfigurationValue('default_ttl', $default_ttl);
-			$this->setUserConfigurationValue('llm_endpoint', $llm_endpoint);
-			$this->setUserConfigurationValue('llm_model', $llm_model);
-			$this->setUserConfigurationValue('rss_bridge_url', $rss_bridge_url);
-			$this->setUserConfigurationValue('auto_deploy_bridges', $auto_deploy_bridges);
-			$this->setUserConfigurationValue('fetch_backend', $fetch_backend ?: 'bundled');
-			$this->setUserConfigurationValue('playwright_server_url', $playwright_server_url);
-			$this->setUserConfigurationValue('browserless_url', $browserless_url);
-			$this->setUserConfigurationValue('scrapling_serve_url', $scrapling_serve_url);
-			$this->setUserConfigurationValue('services_auth_token', $services_auth_token);
-			$this->setUserConfigurationValue('sidecar_auth_token', $sidecar_auth_token);
+			$conf['sidecar_url']            = $sidecar_url;
+			$conf['default_ttl']            = $default_ttl;
+			$conf['llm_endpoint']           = $llm_endpoint;
+			$conf['llm_model']              = $llm_model;
+			$conf['rss_bridge_url']         = $rss_bridge_url;
+			$conf['rss_bridge_deploy_mode'] = $rss_bridge_deploy_mode;
+			$conf['auto_deploy_bridges']    = $auto_deploy_bridges;
+			$conf['fetch_backend']          = $fetch_backend ?: 'bundled';
+			$conf['playwright_server_url']  = $playwright_server_url;
+			$conf['browserless_url']        = $browserless_url;
+			$conf['scrapling_serve_url']    = $scrapling_serve_url;
+			$conf['services_auth_token']    = $services_auth_token;
+			$conf['sidecar_auth_token']     = $sidecar_auth_token;
+			$conf['sftp_host']              = $sftp_host;
+			$conf['sftp_port']              = $sftp_port;
+			$conf['sftp_user']              = $sftp_user;
+			$conf['sftp_key_path']          = $sftp_key_path;
+			$conf['sftp_target_dir']        = $sftp_target_dir;
+
+			$this->setUserConfiguration($conf);
+
+			Minz_Request::good(_t('feedback.conf.updated'));
 		}
 	}
 
@@ -97,7 +125,7 @@ final class AutoFeedExtension extends Minz_Extension {
 	 */
 	public function getSidecarUrl(): string {
 		return rtrim(
-			$this->getUserConfigurationString('sidecar_url') ?: self::DEFAULT_SIDECAR_URL,
+			$this->getUserConfigurationValue('sidecar_url') ?: self::DEFAULT_SIDECAR_URL,
 			'/'
 		);
 	}
@@ -107,11 +135,11 @@ final class AutoFeedExtension extends Minz_Extension {
 	}
 
 	public function getLlmEndpoint(): string {
-		return $this->getUserConfigurationString('llm_endpoint') ?: '';
+		return $this->getUserConfigurationValue('llm_endpoint') ?: '';
 	}
 
 	public function getLlmApiKey(): string {
-		return $this->getUserConfigurationString('llm_api_key') ?: '';
+		return $this->getUserConfigurationValue('llm_api_key') ?: '';
 	}
 
 	/**
@@ -140,35 +168,35 @@ final class AutoFeedExtension extends Minz_Extension {
 	}
 
 	public function getLlmModel(): string {
-		return $this->getUserConfigurationString('llm_model') ?: 'gpt-4o-mini';
+		return $this->getUserConfigurationValue('llm_model') ?: 'gpt-4o-mini';
 	}
 
 	public function getRssBridgeUrl(): string {
-		return rtrim($this->getUserConfigurationString('rss_bridge_url') ?: '', '/');
+		return rtrim($this->getUserConfigurationValue('rss_bridge_url') ?: '', '/');
 	}
 
 	public function getFetchBackend(): string {
-		return $this->getUserConfigurationString('fetch_backend') ?: 'bundled';
+		return $this->getUserConfigurationValue('fetch_backend') ?: 'bundled';
 	}
 
 	public function getPlaywrightServerUrl(): string {
-		return rtrim($this->getUserConfigurationString('playwright_server_url') ?: '', '/');
+		return rtrim($this->getUserConfigurationValue('playwright_server_url') ?: '', '/');
 	}
 
 	public function getBrowserlessUrl(): string {
-		return rtrim($this->getUserConfigurationString('browserless_url') ?: '', '/');
+		return rtrim($this->getUserConfigurationValue('browserless_url') ?: '', '/');
 	}
 
 	public function getScraplingServeUrl(): string {
-		return rtrim($this->getUserConfigurationString('scrapling_serve_url') ?: '', '/');
+		return rtrim($this->getUserConfigurationValue('scrapling_serve_url') ?: '', '/');
 	}
 
 	public function getServicesAuthToken(): string {
-		return $this->getUserConfigurationString('services_auth_token') ?: '';
+		return $this->getUserConfigurationValue('services_auth_token') ?: '';
 	}
 
 	public function getSidecarAuthToken(): string {
-		return $this->getUserConfigurationString('sidecar_auth_token') ?: '';
+		return $this->getUserConfigurationValue('sidecar_auth_token') ?: '';
 	}
 
 	public function getAutoDeployBridges(): bool {

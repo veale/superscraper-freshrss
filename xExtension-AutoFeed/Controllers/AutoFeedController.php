@@ -1,7 +1,5 @@
 <?php
 
-namespace Extension\AutoFeed;
-
 /**
  * Controller for the AutoFeed Discovery extension.
  *

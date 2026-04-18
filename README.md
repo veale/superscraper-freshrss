@@ -665,6 +665,30 @@ For SFTP deployment (Tier 3.3), `asyncssh` is bundled in `requirements.txt` — 
 
 ---
 
+## Compatibility
+
+The extension is tested against FreshRSS **1.24.0–1.28.1** (stable releases).
+
+It uses only the stable `Minz_Extension` API: string hook names,
+`getUserConfigurationValue()` for reads, `setUserConfiguration(array)` for
+writes, and no PHP namespaces. It does not depend on the typed-getter or
+enum-hook additions present in the FreshRSS `edge` branch.
+
+If you see PHP fatals like `Minz_HookType given` or `undefined method
+AutoFeedExtension::getUserConfigurationString()`, your FreshRSS is newer
+than expected (running `edge`) *and* someone has reverted the stable-API
+rewrites in this extension. Re-check `extension.php` and
+`configure.phtml` against this repo.
+
+You can verify compatibility on your specific FreshRSS by running:
+
+    docker exec freshrss php \
+      /var/www/FreshRSS/extensions/xExtension-AutoFeed/tests/api_compat_check.php
+
+Expected output: `OK — Minz_Extension has all methods this extension relies on.`
+
+---
+
 ## License
 
 AGPL-3.0, matching FreshRSS.
