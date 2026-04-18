@@ -77,7 +77,17 @@
       "Bash(python -m pytest tests/test_bridge_contract.py -q)",
       "Bash(python -m pytest tests/test_bridge_flow.py tests/test_cascade_phase2.py::test_no_duplicate_api_endpoints tests/test_inbound_auth.py::test_bridge_deploy_needs_token -q)",
       "Bash(python -m pytest tests/test_node_scoring.py tests/test_selector_generation.py tests/test_example_anchored.py tests/test_skeleton.py -v)",
-      "Bash(python -m pytest --timeout=30 -q --ignore=tests/test_bridge_contract.py --ignore=tests/test_bridge_flow.py --ignore=tests/test_inbound_auth.py --ignore=tests/test_integration.py --ignore=tests/test_cascade_phase2.py)"
+      "Bash(python -m pytest --timeout=30 -q --ignore=tests/test_bridge_contract.py --ignore=tests/test_bridge_flow.py --ignore=tests/test_inbound_auth.py --ignore=tests/test_integration.py --ignore=tests/test_cascade_phase2.py)",
+      "Bash(python -m pytest tests/test_multi_field_anchor.py -v)",
+      "Bash(python -m pytest tests/ -x -q)",
+      "Bash(python -m pytest tests/test_bridge_contract.py::test_bridge_generate_to_deploy_flow -q)",
+      "Bash(python -m pytest tests/ -q --ignore=tests/test_bridge_contract.py)",
+      "Bash(python -m pytest tests/test_multi_field_anchor.py tests/test_selector_generation.py -q)",
+      "Bash(python -m pytest tests/test_bridge_flow.py tests/test_cascade_phase2.py tests/test_inbound_auth.py -q)",
+      "Bash(python -m pytest tests/test_bridge_flow.py::test_bridge_generate_sanity_warnings_on_bad_php -q)",
+      "Bash(python -m pytest tests/test_cascade_phase2.py::test_error_boundary_isolates_browser_failure tests/test_inbound_auth.py::test_bridge_deploy_needs_token -v)",
+      "Bash(python -m pytest tests/test_multi_field_anchor.py tests/test_selector_generation.py tests/test_example_anchored.py tests/test_discover_results_page.py tests/test_candidate_xpath.py tests/test_cascade_phase2.py -v)",
+      "Bash(python -m pytest tests/test_multi_field_anchor.py tests/test_selector_generation.py tests/test_example_anchored.py tests/test_discover_results_page.py tests/test_cascade_phase2.py -v)"
     ],
     "additionalDirectories": [
       "/tmp",

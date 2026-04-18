@@ -135,6 +135,7 @@ class DiscoveryResults(BaseModel):
     # Per-candidate refinements stored when user uses per-candidate refine
     # Shape: {index: {field_selector: value, ...}}
     candidate_refinements: dict[str, dict[str, str]] = Field(default_factory=dict)
+    backend_used: str = ""
 
 
 class DiscoverResponse(BaseModel):

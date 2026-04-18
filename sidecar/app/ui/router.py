@@ -97,10 +97,24 @@ async def home(request: Request) -> HTMLResponse:
     from app.ui.feeds_store import get_feeds_store
     recent = get_feeds_store().all()[:3]
     prefill_url = request.query_params.get("url", "")
+    services = _service_config()
+    backends_available = {
+        "bundled": True,
+        "stealthy": True,
+        "playwright_server": bool(services.playwright_server_url),
+        "browserless": bool(services.browserless_url),
+        "scrapling_serve": bool(services.scrapling_serve_url),
+    }
     return templates.TemplateResponse(
         request,
         "home.html",
-        _ctx(request, "AutoFeed — Discover Feeds", recent_feeds=recent, prefill_url=prefill_url),
+        _ctx(
+            request,
+            "AutoFeed — Discover Feeds",
+            recent_feeds=recent,
+            prefill_url=prefill_url,
+            backends_available=backends_available,
+        ),
     )
 
 
@@ -161,6 +175,7 @@ async def discover_results(request: Request, discover_id: str) -> HTMLResponse:
             f"Discovery — {result.url}",
             target_url=result.url,
             discover_id=discover_id,
+            results=res,
             meta=res.page_meta.model_dump(),
             errors=stored.get("errors", []),
             has_llm=has_llm,
@@ -774,6 +789,138 @@ async def candidate_refine(request: Request):
         body = _json.loads(resp.body)
         body["reasoning"] = reasoning
         return JSONResponse(body)
+
+    # ── mode: multi (deterministic LCA, no LLM) ──────────────────────────────────
+    if mode == "multi":
+        from app.discovery.multi_field_anchor import decode_example_rows, find_items_from_rows
+        from app.scraping.scrape import fetch_and_parse, _scrape_xpath_from_selector
+
+        rows = decode_example_rows(form)
+        if not rows:
+            return JSONResponse(
+                {"error": "Provide at least one example field (title, date, link, etc.)."},
+                status_code=400,
+            )
+
+        try:
+            html, sel, _ = await fetch_and_parse(result.url, services, timeout=30)
+        except RuntimeError as exc:
+            return JSONResponse({"error": f"Fetch failed: {str(exc)[:200]}"}, status_code=502)
+
+        outcome = find_items_from_rows(html, rows)
+        if outcome is None:
+            return JSONResponse({
+                "error": (
+                    "None of your examples could be located on the rendered page. "
+                    "Check spelling and confirm the text appears on the live site."
+                )
+            }, status_code=422)
+
+        c.item_selector = outcome.item_selector
+        for role, rel_sel in outcome.field_selectors.items():
+            if role in ("title", "link", "content", "timestamp", "author", "thumbnail"):
+                setattr(c, f"{role}_selector", rel_sel)
+        _persist_candidate()
+
+        selectors = ScrapeSelectors(
+            item=c.item_selector,
+            item_title=c.title_selector,
+            item_link=c.link_selector,
+            item_content=c.content_selector,
+            item_timestamp=c.timestamp_selector,
+            item_author=c.author_selector,
+            item_thumbnail=c.thumbnail_selector,
+        )
+        req = ScrapeRequest(
+            url=result.url, strategy=FeedStrategy.XPATH,
+            selectors=selectors, services=services, adaptive=False,
+        )
+        items, warnings, _ = await _scrape_xpath_from_selector(req, sel, html)
+        all_warnings = list(outcome.warnings) + list(warnings)
+        return _render_preview_json(items[:10], [], all_warnings)
+
+    # ── mode: smart (LCA + optional LLM polish) ───────────────────────────────
+    if mode == "smart":
+        from app.discovery.multi_field_anchor import decode_example_rows, find_items_from_rows
+        from app.llm.analyzer import refine_with_item_samples
+        from app.scraping.scrape import fetch_and_parse, _scrape_xpath_from_selector
+        from lxml import etree as _lxml_etree
+
+        rows = decode_example_rows(form)
+        if not rows:
+            return JSONResponse(
+                {"error": "Provide at least one example field (title, date, link, etc.)."},
+                status_code=400,
+            )
+
+        try:
+            html, sel, _ = await fetch_and_parse(result.url, services, timeout=30)
+        except RuntimeError as exc:
+            return JSONResponse({"error": f"Fetch failed: {str(exc)[:200]}"}, status_code=502)
+
+        outcome = find_items_from_rows(html, rows)
+        if outcome is None:
+            return JSONResponse({
+                "error": (
+                    "None of your examples could be located on the rendered page. "
+                    "Check spelling and confirm the text appears on the live site."
+                )
+            }, status_code=422)
+
+        c.item_selector = outcome.item_selector
+        for role, rel_sel in outcome.field_selectors.items():
+            if role in ("title", "link", "content", "timestamp", "author", "thumbnail"):
+                setattr(c, f"{role}_selector", rel_sel)
+        _persist_candidate()
+
+        reasoning = ""
+        llm = _llm_config()
+        if llm is not None and outcome.item_outer_htmls:
+            flat_examples = rows[0] if rows else {}
+            try:
+                improved = await refine_with_item_samples(
+                    url=result.url,
+                    candidate=c,
+                    item_outer_htmls=outcome.item_outer_htmls,
+                    examples=flat_examples,
+                    llm=llm,
+                )
+                reasoning = improved.pop("reasoning", "") or ""
+                for role in ("title", "link", "content", "timestamp", "author", "thumbnail"):
+                    key = f"{role}_selector"
+                    proposed = improved.get(key)
+                    if proposed:
+                        try:
+                            _lxml_etree.XPath(proposed)
+                            setattr(c, key, proposed)
+                        except Exception:
+                            pass
+                _persist_candidate()
+            except RuntimeError:
+                pass
+
+        selectors = ScrapeSelectors(
+            item=c.item_selector,
+            item_title=c.title_selector,
+            item_link=c.link_selector,
+            item_content=c.content_selector,
+            item_timestamp=c.timestamp_selector,
+            item_author=c.author_selector,
+            item_thumbnail=c.thumbnail_selector,
+        )
+        req = ScrapeRequest(
+            url=result.url, strategy=FeedStrategy.XPATH,
+            selectors=selectors, services=services, adaptive=False,
+        )
+        items, warnings, _ = await _scrape_xpath_from_selector(req, sel, html)
+        all_warnings = list(outcome.warnings) + list(warnings)
+        resp = _render_preview_json(items[:10], [], all_warnings)
+        if reasoning:
+            import json as _json
+            body = _json.loads(resp.body)
+            body["reasoning"] = reasoning
+            return JSONResponse(body)
+        return resp
 
     # ── mode: reanchor ────────────────────────────────────────────────────────
     if mode == "reanchor":

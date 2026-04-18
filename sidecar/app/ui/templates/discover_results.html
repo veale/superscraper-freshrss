@@ -17,6 +17,12 @@
     </div>
   {% endif %}
 
+  {% if results and results.backend_used %}
+    <p class="results-meta text-secondary">
+      Fetched with: <strong>{{ results.backend_used }}</strong>{% if results.phase2_used %} · browser rendering used{% endif %}{% if results.stealth_used %} · stealth enabled{% endif %}
+    </p>
+  {% endif %}
+
   {% if meta.frameworks_detected %}
     <p class="results-meta text-secondary">
       Detected: {{ meta.frameworks_detected | join(', ') }}
@@ -151,7 +157,9 @@
              "No viable RSS or Atom feed found. All advertised feeds were unreachable.") }}
   {{ section("JSON API Endpoints",    api_endpoints,      "partials/candidate_api.html",
              "No usable JSON API endpoint found.") }}
-  {{ section("GraphQL Operations",    graphql_operations, "partials/candidate_graphql.html") }}
+  {{ section("GraphQL Operations",    graphql_operations, "partials/candidate_graphql.html",
+             "No GraphQL operations detected. GraphQL traffic is only visible in "
+             "browser mode — try 'Browser (bundled)' if the page likely uses it.") }}
   {{ section("Embedded JSON Data",    embedded_json,      "partials/candidate_embedded.html") }}
   {{ section("HTML Scraping (XPath)", xpath_candidates,   "partials/candidate_xpath.html") }}
 

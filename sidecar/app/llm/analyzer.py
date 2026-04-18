@@ -212,6 +212,94 @@ async def recommend_candidate_selectors(
     return selectors
 
 
+async def refine_with_item_samples(
+    url: str,
+    candidate,
+    item_outer_htmls: list[str],
+    examples: dict[str, str],
+    llm,
+) -> dict:
+    """Ask the LLM to polish field selectors given actual item outerHTML samples.
+
+    Precondition: item_selector has already been established (by LCA or heuristic).
+    The LLM's job is narrow: confirm or correct each field's relative XPath, propose
+    selectors for roles the user didn't supply examples for, and flag selectors that
+    won't generalise.
+    """
+    client = LLMClient(
+        endpoint=llm.endpoint, api_key=llm.api_key,
+        model=llm.model, timeout=llm.timeout,
+    )
+
+    system = (
+        "You are an HTML feed-selector expert refining a set of XPath "
+        "selectors against KNOWN item samples. The item container has "
+        "already been identified; your job is to produce RELATIVE XPath "
+        "expressions (starting with .//) for each field so that, applied "
+        "inside each item sample, they return the correct value.\n"
+        "\n"
+        "Return JSON with these keys, any of which may be null to keep "
+        "the current value:\n"
+        "  title_selector, link_selector, content_selector,\n"
+        "  timestamp_selector, author_selector, thumbnail_selector,\n"
+        "  reasoning (one sentence).\n"
+        "\n"
+        "Rules:\n"
+        "  - DO NOT change the item container. Only field selectors.\n"
+        "  - A field selector is correct only if it produces the same "
+        "kind of value across ALL samples.\n"
+        "  - Prefer class-based XPath (contains(@class,'x')) over "
+        "position-based XPath ([1], [last()]).\n"
+        "  - For link, return an XPath ending in /@href.\n"
+        "  - For thumbnail, return an XPath ending in /@src (or /@data-src).\n"
+        "  - If a field doesn't reliably exist in the samples, return null.\n"
+        "\n"
+        "Return JSON only. No prose."
+    )
+
+    parts = [f"Page URL: {url}", ""]
+    parts.append(f"Item container selector (fixed): {candidate.item_selector}")
+    parts.append("")
+    parts.append("Current field selectors (you may change these):")
+    parts.append(f"  title:     {candidate.title_selector or '(unset)'}")
+    parts.append(f"  link:      {candidate.link_selector or '(unset)'}")
+    parts.append(f"  content:   {candidate.content_selector or '(unset)'}")
+    parts.append(f"  timestamp: {candidate.timestamp_selector or '(unset)'}")
+    parts.append(f"  author:    {candidate.author_selector or '(unset)'}")
+    parts.append(f"  thumbnail: {candidate.thumbnail_selector or '(unset)'}")
+    parts.append("")
+
+    if examples:
+        parts.append("User examples (one real item on this page):")
+        for role, val in examples.items():
+            if val:
+                parts.append(f"  {role}: {val[:200]}")
+        parts.append("Your selectors MUST reproduce these for that item.")
+        parts.append("")
+
+    parts.append(f"Item samples ({len(item_outer_htmls)} items from the page, outerHTML):")
+    for i, html_frag in enumerate(item_outer_htmls[:3], 1):
+        parts.append(f"--- Item {i} ---")
+        parts.append(html_frag[:4000])
+    parts.append("")
+    parts.append("Return JSON only.")
+    user = "\n".join(parts)
+
+    try:
+        result = await client.chat_completion(system, user)
+    except (LLMTimeout, LLMAuth, LLMMalformed, LLMError) as exc:
+        raise RuntimeError(f"LLM error: {exc}") from exc
+
+    raw = result.content
+    fields = (
+        "title_selector", "link_selector", "content_selector",
+        "timestamp_selector", "author_selector", "thumbnail_selector",
+    )
+    selectors = {k: raw.get(k) or None for k in fields}
+    selectors["reasoning"] = str(raw.get("reasoning", "") or "")
+    return selectors
+
+
 async def generate_bridge(req: BridgeGenerateRequest) -> BridgeGenerateResponse:
     """Call the LLM to generate an RSS-Bridge PHP script."""
     client = LLMClient(

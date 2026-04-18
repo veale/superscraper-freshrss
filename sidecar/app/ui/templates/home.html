@@ -24,20 +24,63 @@
         autocomplete="url"
         spellcheck="false"
       >
-      <button type="submit" class="btn btn-primary btn-lg">Discover</button>
+      <button type="submit" class="btn btn-primary btn-lg"
+              name="mode_preset" value="auto">
+        Discover
+      </button>
     </div>
 
     <p class="text-tertiary" style="font-size: 13px; margin-top: 8px;">
       <kbd>Cmd</kbd> + <kbd>Enter</kbd> to submit
     </p>
 
+    <details class="discover-backends">
+      <summary class="text-secondary" style="font-size:13px;">
+        Or choose a specific fetch method
+      </summary>
+      <div class="backend-buttons">
+        <button type="submit" class="btn btn-secondary btn-sm"
+                name="mode_preset" value="http"
+                title="Fastest. HTTP only, no browser. Good for static pages and feeds.">
+          Quick (HTTP only)
+        </button>
+        <button type="submit" class="btn btn-secondary btn-sm"
+                name="mode_preset" value="browser"
+                title="Bundled Playwright. Renders JavaScript.">
+          Browser (bundled)
+        </button>
+        <button type="submit" class="btn btn-secondary btn-sm"
+                name="mode_preset" value="stealth"
+                title="Scrapling stealth mode. Bypasses Cloudflare.">
+          Stealth (Scrapling)
+        </button>
+        {% if backends_available.playwright_server %}
+          <button type="submit" class="btn btn-secondary btn-sm"
+                  name="mode_preset" value="playwright_server"
+                  title="External Playwright server.">
+            External Playwright
+          </button>
+        {% endif %}
+        {% if backends_available.browserless %}
+          <button type="submit" class="btn btn-secondary btn-sm"
+                  name="mode_preset" value="browserless"
+                  title="Browserless CDP endpoint.">
+            Browserless
+          </button>
+        {% endif %}
+        {% if backends_available.scrapling_serve %}
+          <button type="submit" class="btn btn-secondary btn-sm"
+                  name="mode_preset" value="scrapling_serve"
+                  title="Remote Scrapling server.">
+            Scrapling-serve
+          </button>
+        {% endif %}
+      </div>
+    </details>
+
     <details class="discover-advanced">
       <summary>Advanced options</summary>
       <div class="discover-advanced-body">
-        <label class="checkbox-label">
-          <input type="checkbox" name="use_browser" value="1">
-          <span>Use browser rendering (slower; helps with JavaScript-heavy sites)</span>
-        </label>
         <label class="checkbox-label">
           <input type="checkbox" name="force_skip_rss" value="1">
           <span>Skip RSS autodiscovery (force deep API / scrape scan)</span>

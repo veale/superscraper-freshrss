@@ -213,12 +213,45 @@ async def discover(request: Request):
         url = str(form.get("url", "")).strip()
         if not url:
             return RedirectResponse("/", status_code=303)
+
+        preset = str(form.get("mode_preset") or "auto").strip()
+        use_browser = False
+        force_stealth = False
+        backend_override: str | None = None
+
+        if preset == "http":
+            pass
+        elif preset == "browser":
+            use_browser = True
+            backend_override = "bundled"
+        elif preset == "stealth":
+            use_browser = True
+            force_stealth = True
+            backend_override = "stealthy"
+        elif preset == "playwright_server":
+            use_browser = True
+            backend_override = "playwright_server"
+        elif preset == "browserless":
+            use_browser = True
+            backend_override = "browserless"
+        elif preset == "scrapling_serve":
+            use_browser = True
+            backend_override = "scrapling_serve"
+        else:
+            # "auto" — fall back to the form checkboxes for legacy paths
+            use_browser = bool(form.get("use_browser"))
+            force_stealth = bool(form.get("force_stealth"))
+
+        services = _settings_services()
+        if backend_override:
+            services = services.model_copy(update={"fetch_backend": backend_override})
+
         req = DiscoverRequest(
             url=url,
-            use_browser=bool(form.get("use_browser")),
+            use_browser=use_browser,
             force_skip_rss=bool(form.get("force_skip_rss")),
-            force_stealth=bool(form.get("force_stealth")),
-            services=_settings_services(),
+            force_stealth=force_stealth,
+            services=services,
         )
     else:
         _check_inbound_token(request, require=False)

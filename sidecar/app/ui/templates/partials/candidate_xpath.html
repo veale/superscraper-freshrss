@@ -125,6 +125,12 @@
       <input type="hidden" name="discover_id" value="{{ discover_id }}">
       <input type="hidden" name="index" value="{{ e.index }}">
 
+      <p class="text-tertiary" style="font-size:12px; margin:0 0 8px;">
+        Paste values from one real item. To cover a page that mixes two item
+        layouts, add a second value to each field — the second values describe
+        a second example item. AutoFeed will union the two selectors automatically.
+      </p>
+
       <div class="field-grid-2">
         {% for role, label, placeholder in [
               ("title",     "Title",      "e.g. Trump administration silences…"),
@@ -134,24 +140,42 @@
               ("author",    "Author",     "e.g. Jane Doe"),
               ("thumbnail", "Thumbnail",  "e.g. filename or alt text"),
            ] %}
-          <div class="field">
+          <div class="refine-field" data-role="{{ role }}">
             <label>{{ label }}</label>
-            <input type="text" name="{{ role }}_example" placeholder="{{ placeholder }}">
+            <div class="refine-inputs">
+              <input type="text" name="{{ role }}_examples" placeholder="{{ placeholder }}">
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary refine-add" data-role="{{ role }}">
+              + Add another
+            </button>
           </div>
         {% endfor %}
       </div>
 
       <div class="refine-actions">
-        <button type="submit" class="btn btn-primary btn-sm" name="mode" value="examples">
-          Refine from examples
-        </button>
-        <button type="submit" class="btn btn-secondary btn-sm" name="mode" value="reanchor"
-                title="Use your example title/link to re-find the item container without an LLM">
-          Re-find container
+        {% if has_llm %}
+          <button type="submit" class="btn btn-primary btn-sm" name="mode" value="smart"
+                  title="Find item container via LCA algorithm, then polish field selectors with LLM">
+            Refine from my examples
+          </button>
+          <button type="submit" class="btn btn-secondary btn-sm" name="mode" value="multi"
+                  title="Find item container via LCA algorithm only — no LLM calls">
+            Re-find (no AI)
+          </button>
+        {% else %}
+          <button type="submit" class="btn btn-primary btn-sm" name="mode" value="multi"
+                  title="Find item container via LCA algorithm">
+            Refine from my examples
+          </button>
+        {% endif %}
+        <button type="submit" class="btn btn-secondary btn-sm" name="mode" value="examples"
+                title="Keep current item container; only refine field selectors using examples">
+          Refine fields only
         </button>
         {% if has_llm %}
-          <button type="submit" class="btn btn-secondary btn-sm" name="mode" value="llm">
-            Refine with LLM
+          <button type="submit" class="btn btn-secondary btn-sm" name="mode" value="llm"
+                  title="Ask LLM to refine selectors from page structure alone (no example text needed)">
+            LLM only
           </button>
         {% endif %}
         <button type="button" class="btn btn-link btn-sm refine-cancel" data-index="{{ e.index }}">Cancel</button>

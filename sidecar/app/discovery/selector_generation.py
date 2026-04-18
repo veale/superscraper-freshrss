@@ -31,8 +31,8 @@ _MIN_REPEATS = 3
 
 _UTILITY_PREFIXES = (
     "w-", "h-", "m-", "p-", "mx-", "my-", "px-", "py-", "mt-", "mb-", "ml-", "mr-",
-    "pt-", "pb-", "pl-", "pr-", "text-", "bg-", "border-", "flex-",
-    "grid-cols-", "grid-rows-", "grid-flow-",  # specific Tailwind grid utilities only
+    "pt-", "pb-", "pl-", "pr-", "text-", "bg-", "border-",
+    "grid-cols-", "grid-rows-", "grid-flow-",
     "items-", "justify-", "gap-", "space-", "rounded-", "shadow-", "opacity-",
     "z-", "top-", "left-", "right-", "bottom-", "max-", "min-", "overflow-",
     "leading-", "tracking-", "font-", "col-span-", "col-start-", "row-span-",
@@ -44,6 +44,22 @@ _UTILITY_VARIANT_RE = re.compile(
     r"^(sm|md|lg|xl|2xl|3xl|hover|focus|first|last|active|disabled|dark|group-hover):"
 )
 
+# Specific Tailwind flex/grid utility names that are NOT component classes.
+_TAILWIND_LAYOUT_UTILS: frozenset[str] = frozenset({
+    "flex-row", "flex-col", "flex-wrap", "flex-nowrap",
+    "flex-row-reverse", "flex-col-reverse",
+    "flex-auto", "flex-1", "flex-none", "flex-initial", "flex-grow", "flex-shrink",
+    "items-start", "items-end", "items-center", "items-baseline", "items-stretch",
+    "justify-start", "justify-end", "justify-center",
+    "justify-between", "justify-around", "justify-evenly",
+    "self-auto", "self-start", "self-end", "self-center", "self-stretch",
+    "grid-flow-row", "grid-flow-col", "grid-flow-row-dense", "grid-flow-col-dense",
+})
+
+_TAILWIND_COMPOUND_RE = re.compile(
+    r"^(grid-cols|grid-rows|col-span|row-span|col-start|col-end|row-start|row-end)-\d+$"
+)
+
 
 def _is_utility_class(cls: str) -> bool:
     if not cls:
@@ -51,6 +67,10 @@ def _is_utility_class(cls: str) -> bool:
     m = _UTILITY_VARIANT_RE.match(cls)
     if m:
         return _is_utility_class(cls[m.end():])
+    if cls in _TAILWIND_LAYOUT_UTILS:
+        return True
+    if _TAILWIND_COMPOUND_RE.match(cls):
+        return True
     if cls in {"flex", "grid", "hidden", "block", "inline", "relative", "absolute",
                "fixed", "sticky", "static"}:
         return True
@@ -58,10 +78,11 @@ def _is_utility_class(cls: str) -> bool:
 
 
 def _meaningful_classes(class_attr: str) -> str:
-    """Return only non-utility class tokens, preserving order."""
     if not class_attr:
         return ""
     kept = [c for c in class_attr.split() if not _is_utility_class(c)]
+    # BEM tokens first — they're the most distinctive identifiers.
+    kept.sort(key=lambda c: (0 if ("__" in c or "--" in c) else 1))
     return " ".join(kept)
 
 

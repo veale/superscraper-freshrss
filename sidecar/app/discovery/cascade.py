@@ -231,6 +231,8 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
 
     html_skeleton = build_skeleton(browser_html or html) if (browser_html or html) else ""
 
+    backend_used = req.services.fetch_backend if needs_browser else "http"
+
     return DiscoverResponse(
         url=url,
         timestamp=datetime.now(timezone.utc),
@@ -245,6 +247,7 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
             phase2_used=needs_browser,
             stealth_used=stealth_used,
             force_skip_rss=req.force_skip_rss,
+            backend_used=backend_used,
         ),
         errors=errors,
     )
