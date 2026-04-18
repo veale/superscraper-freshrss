@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="settings-page">
+  <div class="settings-header">
+    <h1>Settings</h1>
+    <p class="text-secondary">Configure the sidecar service, LLM provider, and deployment options.</p>
+  </div>
+
+  <form method="post" action="/settings" class="settings-form">
+
+    <!-- ── LLM ─────────────────────────────────────────────────────────── -->
+    <section class="settings-section card">
+      <h2 class="settings-section-title">LLM (AI analysis)</h2>
+      <p class="settings-section-desc text-secondary">
+        Used for strategy recommendations and RSS-Bridge script generation.
+        Any OpenAI-compatible endpoint works (OpenAI, Azure OpenAI, Ollama, etc.).
+      </p>
+
+      <div class="field">
+        <label for="llm_endpoint">API endpoint</label>
+        <input type="url" id="llm_endpoint" name="llm_endpoint"
+               placeholder="https://api.openai.com/v1"
+               value="{{ settings.llm_endpoint | e }}">
+        <p class="field-hint">Base URL, e.g. <code>https://api.openai.com/v1</code></p>
+      </div>
+
+      <div class="field">
+        <label for="llm_api_key">API key</label>
+        <input type="password" id="llm_api_key" name="llm_api_key"
+               placeholder="sk-…"
+               value="{{ settings.llm_api_key_display | e }}"
+               autocomplete="off">
+        <p class="field-hint">Stored server-side. Leave unchanged to keep the existing key.</p>
+      </div>
+
+      <div class="field">
+        <label for="llm_model">Model</label>
+        <input type="text" id="llm_model" name="llm_model"
+               placeholder="gpt-4o-mini"
+               value="{{ settings.llm_model | e }}">
+      </div>
+    </section>
+
+    <!-- ── Fetch backend ──────────────────────────────────────────────── -->
+    <section class="settings-section card">
+      <h2 class="settings-section-title">Fetch backend</h2>
+      <p class="settings-section-desc text-secondary">
+        Controls how pages are loaded when JavaScript rendering is needed.
+      </p>
+
+      <div class="field">
+        <label for="fetch_backend">Backend</label>
+        <select id="fetch_backend" name="fetch_backend">
+          {% for opt in [("bundled", "Bundled Playwright (in-process)"),
+                         ("playwright_server", "External Playwright server"),
+                         ("browserless", "Browserless / Chromium"),
+                         ("scrapling_serve", "Scrapling-serve")] %}
+          <option value="{{ opt[0] }}" {% if settings.fetch_backend == opt[0] %}selected{% endif %}>
+            {{ opt[1] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="playwright_server_url">Playwright server URL</label>
+        <input type="url" id="playwright_server_url" name="playwright_server_url"
+               placeholder="ws://playwright-server:3000/"
+               value="{{ settings.playwright_server_url | e }}">
+      </div>
+
+      <div class="field">
+        <label for="browserless_url">Browserless WebSocket URL</label>
+        <input type="url" id="browserless_url" name="browserless_url"
+               placeholder="ws://browserless:3000"
+               value="{{ settings.browserless_url | e }}">
+      </div>
+
+      <div class="field">
+        <label for="scrapling_serve_url">Scrapling-serve URL</label>
+        <input type="url" id="scrapling_serve_url" name="scrapling_serve_url"
+               placeholder="http://scrapling-serve:8001"
+               value="{{ settings.scrapling_serve_url | e }}">
+      </div>
+
+      <div class="field">
+        <label for="services_auth_token">Services bearer token</label>
+        <input type="password" id="services_auth_token" name="services_auth_token"
+               placeholder="optional shared secret"
+               value="{{ settings.services_auth_token | e }}"
+               autocomplete="off">
+        <p class="field-hint">Added as <code>Authorization: Bearer …</code> to all service calls.</p>
+      </div>
+    </section>
+
+    <!-- ── RSS-Bridge ─────────────────────────────────────────────────── -->
+    <section class="settings-section card">
+      <h2 class="settings-section-title">RSS-Bridge</h2>
+
+      <div class="field">
+        <label for="rss_bridge_url">RSS-Bridge URL</label>
+        <input type="url" id="rss_bridge_url" name="rss_bridge_url"
+               placeholder="http://rss-bridge"
+               value="{{ settings.rss_bridge_url | e }}">
+      </div>
+
+      <div class="field">
+        <label for="rss_bridge_deploy_mode">Deploy mode</label>
+        <select id="rss_bridge_deploy_mode" name="rss_bridge_deploy_mode">
+          {% for opt in [("auto", "Auto (local volume first, then remote)"),
+                         ("local_only", "Local volume only"),
+                         ("remote_only", "Remote only (HTTP API or SFTP)")] %}
+          <option value="{{ opt[0] }}" {% if settings.rss_bridge_deploy_mode == opt[0] %}selected{% endif %}>
+            {{ opt[1] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="checkbox-label">
+          <input type="checkbox" name="auto_deploy_bridges" value="1"
+                 {% if settings.auto_deploy_bridges %}checked{% endif %}>
+          <span>Auto-deploy generated bridges</span>
+        </label>
+        <p class="field-hint">Deploy immediately after generation without a manual confirm step.</p>
+      </div>
+    </section>
+
+    <!-- ── Feed defaults ──────────────────────────────────────────────── -->
+    <section class="settings-section card">
+      <h2 class="settings-section-title">Feed defaults</h2>
+
+      <div class="field">
+        <label for="default_ttl">Default TTL (seconds)</label>
+        <input type="number" id="default_ttl" name="default_ttl"
+               min="60" step="60"
+               value="{{ settings.default_ttl }}">
+        <p class="field-hint">How often saved feeds refresh. Minimum 60 s. Default 86400 (24 h).</p>
+      </div>
+    </section>
+
+    <!-- ── SFTP ───────────────────────────────────────────────────────── -->
+    <details class="settings-section card settings-sftp">
+      <summary class="settings-section-title settings-collapsible-title">
+        SFTP deployment
+        <span class="settings-collapsible-hint text-tertiary">expand</span>
+      </summary>
+      <p class="settings-section-desc text-secondary mt-4">
+        Used when deploying RSS-Bridge scripts to a remote server via SFTP.
+        Leave blank if using local volume deployment.
+      </p>
+
+      <div class="field">
+        <label for="sftp_host">Host</label>
+        <input type="text" id="sftp_host" name="sftp_host"
+               placeholder="example.com"
+               value="{{ settings.sftp_host | e }}">
+      </div>
+
+      <div class="field field--narrow">
+        <label for="sftp_port">Port</label>
+        <input type="number" id="sftp_port" name="sftp_port"
+               min="1" max="65535"
+               value="{{ settings.sftp_port | e }}">
+      </div>
+
+      <div class="field">
+        <label for="sftp_user">Username</label>
+        <input type="text" id="sftp_user" name="sftp_user"
+               autocomplete="off"
+               value="{{ settings.sftp_user | e }}">
+      </div>
+
+      <div class="field">
+        <label for="sftp_key_path">Private key path</label>
+        <input type="text" id="sftp_key_path" name="sftp_key_path"
+               placeholder="/app/data/id_ed25519"
+               value="{{ settings.sftp_key_path | e }}">
+        <p class="field-hint">Absolute path inside the container. Mount the key as a secret or volume.</p>
+      </div>
+
+      <div class="field">
+        <label for="sftp_target_dir">Target directory</label>
+        <input type="text" id="sftp_target_dir" name="sftp_target_dir"
+               placeholder="/var/www/rss-bridge/bridges"
+               value="{{ settings.sftp_target_dir | e }}">
+      </div>
+    </details>
+
+    <div class="settings-actions">
+      <button type="submit" class="btn btn-primary">Save settings</button>
+    </div>
+
+  </form>
+</div>
+{% endblock %}

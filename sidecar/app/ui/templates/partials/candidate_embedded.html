@@ -1,0 +1,52 @@
+<div class="candidate-card" id="card-embedded-{{ e.index }}">
+  <div class="candidate-header">
+    <span class="badge badge-embedded">Embedded JSON</span>
+    {% if e.c.item_count %}
+      <span class="candidate-meta text-secondary">{{ e.c.item_count }} items</span>
+    {% endif %}
+    {% if e.c.feed_score %}
+      <span class="candidate-confidence">{{ (e.c.feed_score * 100) | int }}% score</span>
+    {% endif %}
+  </div>
+
+  {% if e.c.source %}
+    <p class="candidate-url text-mono text-secondary">{{ e.c.source }}</p>
+  {% endif %}
+  <p class="candidate-url text-mono">{{ e.c.path }}</p>
+
+  {% if e.c.sample_keys %}
+    <p class="candidate-keys text-secondary">
+      Fields: <span class="text-mono">{{ e.c.sample_keys[:8] | join(', ') }}{% if e.c.sample_keys | length > 8 %}, …{% endif %}</span>
+    </p>
+  {% endif %}
+
+  {% if e.auto_preview %}
+    <div class="preview-target" data-preview-url="{{ e.preview_url }}">
+      <div class="skeleton skeleton-preview"></div>
+    </div>
+  {% else %}
+    <div class="preview-lazy">
+      <button class="btn btn-secondary btn-sm preview-btn"
+              data-preview-url="{{ e.preview_url }}"
+              data-target="preview-embedded-{{ e.index }}">
+        Preview
+      </button>
+      <div id="preview-embedded-{{ e.index }}" class="preview-target"></div>
+    </div>
+  {% endif %}
+
+  <details class="candidate-subscribe">
+    <summary>Save as feed</summary>
+    <div class="subscribe-body">
+      <form method="post" action="/save">
+        <input type="hidden" name="strategy" value="embedded_json">
+        <input type="hidden" name="path" value="{{ e.c.path | e }}">
+        <div class="field">
+          <label for="name-embedded-{{ e.index }}">Feed name</label>
+          <input type="text" id="name-embedded-{{ e.index }}" name="name" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+      </form>
+    </div>
+  </details>
+</div>

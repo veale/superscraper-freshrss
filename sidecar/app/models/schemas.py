@@ -141,7 +141,7 @@ class AnalyzeRequest(BaseModel):
     url: str
     results: DiscoveryResults | None = None
     html_skeleton: str = ""
-    llm: LLMConfig
+    llm: LLMConfig | None = None   # if omitted, filled from server settings_store
     discover_id: str = ""
 
 
@@ -168,7 +168,7 @@ class BridgeGenerateRequest(BaseModel):
     url: str
     html_skeleton: str = ""
     results: DiscoveryResults | None = None
-    llm: LLMConfig
+    llm: LLMConfig | None = None   # if omitted, filled from server settings_store
     hint: str = ""
     discover_id: str = ""
 

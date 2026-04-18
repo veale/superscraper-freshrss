@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="placeholder-page">
+  <div class="placeholder-badge" aria-hidden="true"></div>
+  <h1>Result not found</h1>
+  <p>
+    Discovery result <code>{{ discover_id }}</code> has expired or doesn't exist.
+    Discovery results are cached for a limited time — try running the discovery again.
+  </p>
+  <a href="/" class="btn btn-secondary">&larr; Discover again</a>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <h1 class="hero-title">Discover any website's feed</h1>
+  <p class="hero-subtitle">
+    Paste a URL — AutoFeed finds RSS feeds, API endpoints, and scrape
+    patterns automatically. Save the best result, then subscribe with
+    any RSS reader.
+  </p>
+
+  <form method="post" action="/discover" class="discover-form">
+    <div class="discover-input-row">
+      <label for="url-input" class="sr-only">Website URL</label>
+      <input
+        id="url-input"
+        type="url"
+        name="url"
+        class="url-input"
+        placeholder="https://example.com"
+        required
+        autofocus
+        autocomplete="url"
+        spellcheck="false"
+      >
+      <button type="submit" class="btn btn-primary btn-lg">Discover</button>
+    </div>
+
+    <details class="discover-advanced">
+      <summary>Advanced options</summary>
+      <div class="discover-advanced-body">
+        <label class="checkbox-label">
+          <input type="checkbox" name="use_browser" value="1">
+          <span>Use browser rendering (slower; helps with JavaScript-heavy sites)</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" name="force_skip_rss" value="1">
+          <span>Skip RSS autodiscovery (force deep API / scrape scan)</span>
+        </label>
+      </div>
+    </details>
+  </form>
+
+  <p class="example-links">
+    Try:
+    <a href="#" data-example-url="https://news.ycombinator.com" class="example-link">Hacker News</a>,
+    <a href="#" data-example-url="https://arstechnica.com" class="example-link">Ars Technica</a>,
+    <a href="#" data-example-url="https://simonwillison.net" class="example-link">Simon Willison's blog</a>
+  </p>
+</section>
+{% endblock %}

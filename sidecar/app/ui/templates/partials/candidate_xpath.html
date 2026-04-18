@@ -1,0 +1,64 @@
+<div class="candidate-card" id="card-xpath-{{ e.index }}">
+  <div class="candidate-header">
+    <span class="badge badge-xpath">XPath</span>
+    {% if e.c.confidence %}
+      <span class="candidate-confidence">{{ (e.c.confidence * 100) | int }}% confidence</span>
+    {% endif %}
+    {% if e.c.item_count %}
+      <span class="candidate-meta text-secondary">{{ e.c.item_count }} items</span>
+    {% endif %}
+  </div>
+
+  <p class="candidate-url text-mono text-secondary">{{ e.c.item_selector }}</p>
+
+  {% if e.auto_preview %}
+    <div class="preview-target" data-preview-url="{{ e.preview_url }}">
+      <div class="skeleton skeleton-preview"></div>
+    </div>
+  {% else %}
+    <div class="preview-lazy">
+      <button class="btn btn-secondary btn-sm preview-btn"
+              data-preview-url="{{ e.preview_url }}"
+              data-target="preview-xpath-{{ e.index }}">
+        Preview
+      </button>
+      <div id="preview-xpath-{{ e.index }}" class="preview-target"></div>
+    </div>
+  {% endif %}
+
+  <details class="candidate-selectors">
+    <summary>Show selectors</summary>
+    <div class="selectors-grid">
+      {% for label, val in [
+          ("Item",      e.c.item_selector),
+          ("Title",     e.c.title_selector),
+          ("Link",      e.c.link_selector),
+          ("Content",   e.c.content_selector),
+          ("Timestamp", e.c.timestamp_selector),
+          ("Thumbnail", e.c.thumbnail_selector),
+      ] if val %}
+        <span class="selector-label">{{ label }}</span>
+        <code class="selector-value">{{ val }}</code>
+      {% endfor %}
+    </div>
+  </details>
+
+  <details class="candidate-subscribe">
+    <summary>Save as feed</summary>
+    <div class="subscribe-body">
+      <form method="post" action="/save">
+        <input type="hidden" name="strategy" value="xpath">
+        <input type="hidden" name="item_selector" value="{{ e.c.item_selector | e }}">
+        <input type="hidden" name="title_selector" value="{{ e.c.title_selector | e }}">
+        <input type="hidden" name="link_selector" value="{{ e.c.link_selector | e }}">
+        <input type="hidden" name="content_selector" value="{{ e.c.content_selector | e }}">
+        <input type="hidden" name="timestamp_selector" value="{{ e.c.timestamp_selector | e }}">
+        <div class="field">
+          <label for="name-xpath-{{ e.index }}">Feed name</label>
+          <input type="text" id="name-xpath-{{ e.index }}" name="name" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+      </form>
+    </div>
+  </details>
+</div>

@@ -1,0 +1,6 @@
+{% if flash %}
+<div class="flash flash--{{ flash.type | default('info') }}" role="alert" aria-live="polite">
+  <span class="flash-message">{{ flash.message }}</span>
+  <button type="button" class="flash-dismiss" aria-label="Dismiss">&times;</button>
+</div>
+{% endif %}

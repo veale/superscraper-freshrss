@@ -1,0 +1,52 @@
+<div class="candidate-card" id="card-api-{{ e.index }}">
+  <div class="candidate-header">
+    <span class="badge badge-json">JSON API</span>
+    {% if e.c.item_count %}
+      <span class="candidate-meta text-secondary">{{ e.c.item_count }} items</span>
+    {% endif %}
+    {% if e.c.feed_score %}
+      <span class="candidate-confidence">{{ (e.c.feed_score * 100) | int }}% score</span>
+    {% endif %}
+    {% if e.c.method and e.c.method != 'GET' %}
+      <span class="candidate-meta text-secondary">{{ e.c.method }}</span>
+    {% endif %}
+  </div>
+
+  <p class="candidate-url text-mono">{{ e.c.url }}</p>
+
+  {% if e.c.sample_keys %}
+    <p class="candidate-keys text-secondary">
+      Fields: <span class="text-mono">{{ e.c.sample_keys[:8] | join(', ') }}{% if e.c.sample_keys | length > 8 %}, …{% endif %}</span>
+    </p>
+  {% endif %}
+
+  {% if e.auto_preview %}
+    <div class="preview-target" data-preview-url="{{ e.preview_url }}">
+      <div class="skeleton skeleton-preview"></div>
+    </div>
+  {% else %}
+    <div class="preview-lazy">
+      <button class="btn btn-secondary btn-sm preview-btn"
+              data-preview-url="{{ e.preview_url }}"
+              data-target="preview-api-{{ e.index }}">
+        Preview
+      </button>
+      <div id="preview-api-{{ e.index }}" class="preview-target"></div>
+    </div>
+  {% endif %}
+
+  <details class="candidate-subscribe">
+    <summary>Save as feed</summary>
+    <div class="subscribe-body">
+      <form method="post" action="/save">
+        <input type="hidden" name="strategy" value="json_api">
+        <input type="hidden" name="url" value="{{ e.c.url | e }}">
+        <div class="field">
+          <label for="name-api-{{ e.index }}">Feed name</label>
+          <input type="text" id="name-api-{{ e.index }}" name="name" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+      </form>
+    </div>
+  </details>
+</div>

@@ -29,6 +29,7 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       PLAYWRIGHT_BROWSERS_PATH: "/app/browsers"
+      AUTOFEED_SESSION_SECRET: "${AUTOFEED_SESSION_SECRET:-}"   # set with: openssl rand -hex 32
       # AUTOFEED_FETCH_BACKEND: "bundled"               # bundled|playwright_server|browserless|scrapling_serve
       # AUTOFEED_PLAYWRIGHT_WS: "ws://playwright-server:3000/"
       # AUTOFEED_BROWSERLESS_WS: "ws://browserless:3000?token=${BROWSERLESS_TOKEN}"

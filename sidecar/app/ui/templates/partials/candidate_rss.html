@@ -1,0 +1,44 @@
+<div class="candidate-card" id="card-rss-{{ e.index }}">
+  <div class="candidate-header">
+    <span class="badge badge-rss">{{ e.c.feed_type | upper }}</span>
+    {% if not e.c.is_alive %}
+      <span class="candidate-status candidate-status--dead">Unreachable</span>
+    {% endif %}
+    {% if e.c.title %}
+      <span class="candidate-title">{{ e.c.title }}</span>
+    {% endif %}
+  </div>
+
+  <p class="candidate-url text-mono">{{ e.c.url }}</p>
+
+  {% if e.auto_preview %}
+    <div class="preview-target" data-preview-url="{{ e.preview_url }}">
+      <div class="skeleton skeleton-preview"></div>
+    </div>
+  {% else %}
+    <div class="preview-lazy">
+      <button class="btn btn-secondary btn-sm preview-btn"
+              data-preview-url="{{ e.preview_url }}"
+              data-target="preview-rss-{{ e.index }}">
+        Preview
+      </button>
+      <div id="preview-rss-{{ e.index }}" class="preview-target"></div>
+    </div>
+  {% endif %}
+
+  <details class="candidate-subscribe">
+    <summary>Save as feed</summary>
+    <div class="subscribe-body">
+      <form method="post" action="/save">
+        <input type="hidden" name="strategy" value="rss">
+        <input type="hidden" name="url" value="{{ e.c.url | e }}">
+        <div class="field">
+          <label for="name-rss-{{ e.index }}">Feed name</label>
+          <input type="text" id="name-rss-{{ e.index }}" name="name"
+                 value="{{ e.c.title | default('', true) | e }}" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+      </form>
+    </div>
+  </details>
+</div>

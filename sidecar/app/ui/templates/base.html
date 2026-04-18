@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ title }}{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="/" class="logo-link" aria-label="AutoFeed home">
+      <img src="/static/favicon.svg" class="logo-icon" alt="" aria-hidden="true">
+      <span class="logo-text">AutoFeed</span>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a href="/"        class="nav-link {% if request.url.path == '/' %}nav-link--active{% endif %}"        aria-current="{% if request.url.path == '/' %}page{% endif %}">Home</a>
+      <a href="/feeds"   class="nav-link {% if request.url.path == '/feeds' %}nav-link--active{% endif %}"   aria-current="{% if request.url.path == '/feeds' %}page{% endif %}">Feeds</a>
+      <a href="/settings"class="nav-link {% if request.url.path == '/settings' %}nav-link--active{% endif %}" aria-current="{% if request.url.path == '/settings' %}page{% endif %}">Settings</a>
+    </nav>
+  </div>
+</header>
+
+<main class="site-main">
+  <div class="content-width">
+    {% if flash %}
+      {% include "partials/flash.html" %}
+    {% endif %}
+    {% block content %}{% endblock %}
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="content-width">AutoFeed v{{ version }}</div>
+</footer>
+
+<script src="/static/app.js" defer></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

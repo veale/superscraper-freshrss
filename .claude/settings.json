@@ -41,7 +41,21 @@
       "Bash(git -C /Users/michael/Developer/autofeed-freshrss push origin main)",
       "Bash(php -l xExtension-AutoFeed/i18n/en/ext.php)",
       "Bash(php xExtension-AutoFeed/tests/i18n_check.php)",
-      "Bash(php -r ' *)"
+      "Bash(php -r ' *)",
+      "Bash(python3 -m pip install --prefix /Users/michael/Developer/autofeed-freshrss/sidecar/.venv \"jinja2>=3.1.0,<4.0.0\" \"python-multipart>=0.0.9\" \"itsdangerous>=2.1.0,<3.0.0\" -q)",
+      "Bash(python3 -m pip install \"jinja2>=3.1.0,<4.0.0\" \"python-multipart>=0.0.9\" \"itsdangerous>=2.1.0,<3.0.0\" -q)",
+      "Bash(python3 -c \"import jinja2, multipart, itsdangerous; print\\('all ok'\\)\")",
+      "Bash(python3 -c \"from app.main import app; print\\('import OK — routes:', [r.path for r in app.routes if hasattr\\(r,'path'\\)][:8]\\)\")",
+      "Bash(/opt/homebrew/opt/python@3.10/bin/python3.10 -m venv --clear /Users/michael/Developer/autofeed-freshrss/sidecar/.venv)",
+      "Bash(/Users/michael/Developer/autofeed-freshrss/sidecar/.venv/bin/pip install *)",
+      "Bash(python3 -c ' *)",
+      "Bash(/Users/michael/Developer/autofeed-freshrss/sidecar/.venv/bin/pip --version)",
+      "Bash(.venv/bin/python3 -c \"from app.main import app; from app.ui.settings_store import get_store; print\\('OK, store:', get_store\\(\\).get\\(\\)['llm_model']\\)\")",
+      "Bash(.venv/bin/python3 -c ' *)",
+      "Bash(grep -E \"\\\\.\\(py|json\\)$\")"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }

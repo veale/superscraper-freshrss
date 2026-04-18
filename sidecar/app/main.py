@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import os
+import secrets
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.bridge.deploy import deploy_bridge_remote, _local_bridges_writable
 from app.discovery.cascade import run_discovery
@@ -30,6 +34,7 @@ from app.models.schemas import (
     FeedStrategy,
     GraphQLOperation,
     HealthResponse,
+    LLMConfig,
     PreviewResponse,
     ScrapeRequest,
     ScrapeResponse,
@@ -38,6 +43,8 @@ from app.scraping.config_store import delete_config, load_config, save_config
 from app.scraping.scrape import run_scrape
 from app.services.config import ServiceConfig
 from app.services.discovery_cache import load_discovery, store_discovery
+from app.ui.router import router as ui_router
+from app.ui.settings_store import get_store, init_store
 
 def _bridges_dir() -> str:
     return os.getenv("AUTOFEED_BRIDGES_DIR", "/app/bridges")
@@ -63,6 +70,43 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+_session_secret = os.getenv("AUTOFEED_SESSION_SECRET") or secrets.token_hex(32)
+app.add_middleware(SessionMiddleware, secret_key=_session_secret)
+
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+
+app.include_router(ui_router)
+
+# ── Settings store ────────────────────────────────────────────────────────────
+_data_dir = Path(os.getenv("AUTOFEED_DATA_DIR", "/app/data"))
+init_store(_data_dir / "settings.json")
+
+
+def _settings_llm() -> LLMConfig | None:
+    """Return an LLMConfig from the settings store, or None if unconfigured."""
+    s = get_store().get()
+    if not s.get("llm_endpoint"):
+        return None
+    return LLMConfig(
+        endpoint=s["llm_endpoint"],
+        api_key=s.get("llm_api_key", ""),
+        model=s.get("llm_model", "gpt-4o-mini"),
+    )
+
+
+def _settings_services() -> ServiceConfig:
+    """Return a ServiceConfig populated from the settings store."""
+    s = get_store().get()
+    return ServiceConfig(
+        fetch_backend=s.get("fetch_backend", "bundled"),  # type: ignore[arg-type]
+        playwright_server_url=s.get("playwright_server_url", ""),
+        browserless_url=s.get("browserless_url", ""),
+        scrapling_serve_url=s.get("scrapling_serve_url", ""),
+        rss_bridge_url=s.get("rss_bridge_url", ""),
+        auth_token=s.get("services_auth_token", ""),
+    )
 
 
 def _get_rate_limit_key(request: Request) -> str:
@@ -135,17 +179,44 @@ async def _discover_with_browser(req: DiscoverRequest, request: Request) -> Disc
     return response
 
 
-@app.post("/discover", response_model=DiscoverResponse)
-async def discover(req: DiscoverRequest, request: Request) -> DiscoverResponse:
-    """Handle discovery requests with appropriate rate limiting."""
-    if req.use_browser:
-        return await _discover_with_browser(req, request)
-    # Non-browser requests use the standard 30/min limit
-    _check_inbound_token(request, require=False)
+@app.post("/discover")
+async def discover(request: Request):
+    """Discover feeds from a URL.
+
+    Accepts JSON (programmatic API callers) or form data (web UI).
+    JSON callers receive a DiscoverResponse; form submissions redirect to /d/{discover_id}.
+    """
+    content_type = request.headers.get("content-type", "")
+    is_form = "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type
+
+    if is_form:
+        form = await request.form()
+        url = str(form.get("url", "")).strip()
+        if not url:
+            return RedirectResponse("/", status_code=303)
+        req = DiscoverRequest(
+            url=url,
+            use_browser=bool(form.get("use_browser")),
+            force_skip_rss=bool(form.get("force_skip_rss")),
+            services=_settings_services(),
+        )
+    else:
+        _check_inbound_token(request, require=False)
+        body = await request.json()
+        req = DiscoverRequest.model_validate(body)
+        if "services" not in req.model_fields_set:
+            req = req.model_copy(update={"services": _settings_services()})
+        # Strict rate limit + token check for JSON API browser requests
+        if req.use_browser:
+            return await _discover_with_browser(req, request)
+
     response = await run_discovery(req)
     payload = response.model_dump(mode="json")
     discover_id = store_discovery(payload)
     response.discover_id = discover_id
+
+    if is_form:
+        return RedirectResponse(f"/d/{discover_id}", status_code=303)
     return response
 
 
@@ -163,6 +234,10 @@ async def discover_get(discover_id: str, request: Request) -> DiscoverResponse:
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest, request: Request) -> AnalyzeResponse:
     _check_inbound_token(request)
+    if req.llm is None:
+        req = req.model_copy(update={"llm": _settings_llm()})
+    if req.llm is None:
+        return AnalyzeResponse(url=req.url, errors=["LLM not configured — set endpoint in Settings"])
     if req.discover_id and req.results is None:
         stored = load_discovery(req.discover_id)
         if stored:
@@ -180,6 +255,10 @@ async def analyze(req: AnalyzeRequest, request: Request) -> AnalyzeResponse:
 @app.post("/bridge/generate", response_model=BridgeGenerateResponse)
 async def bridge_generate(req: BridgeGenerateRequest, request: Request) -> BridgeGenerateResponse:
     _check_inbound_token(request)
+    if req.llm is None:
+        req = req.model_copy(update={"llm": _settings_llm()})
+    if req.llm is None:
+        return BridgeGenerateResponse(errors=["LLM not configured — set endpoint in Settings"])
     if req.discover_id and req.results is None:
         stored = load_discovery(req.discover_id)
         if stored:
@@ -197,17 +276,30 @@ async def bridge_generate(req: BridgeGenerateRequest, request: Request) -> Bridg
 @app.post("/bridge/deploy", response_model=BridgeDeployResponse)
 async def bridge_deploy(req: BridgeDeployRequest, request: Request) -> BridgeDeployResponse:
     """Deploy a generated RSS-Bridge PHP file.
-    
+
+    SFTP fields and services fill from settings_store when not provided in the request.
     Supports multiple deployment modes:
     - auto: try local first, then remote
     - local_only: only write to local bridges directory
     - remote_only: only use remote deployment (HTTP API or SFTP)
     """
     _check_inbound_token(request)
-    
+
+    # Fill SFTP and services from settings when not provided in the request
+    if "sftp_host" not in req.model_fields_set or not req.sftp_host:
+        s = get_store().get()
+        req = req.model_copy(update={
+            "sftp_host": req.sftp_host or s.get("sftp_host", ""),
+            "sftp_port": req.sftp_port or int(s.get("sftp_port", 22)),
+            "sftp_user": req.sftp_user or s.get("sftp_user", ""),
+            "sftp_key_path": req.sftp_key_path or s.get("sftp_key_path", ""),
+            "sftp_target_dir": req.sftp_target_dir or s.get("sftp_target_dir", ""),
+            "services": req.services or _settings_services(),
+        })
+
     deploy_mode = req.deploy_mode or "auto"
     errors = []
-    
+
     # Local deployment (shared volume)
     local_writable = _local_bridges_writable(_bridges_dir())
     

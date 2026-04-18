@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="results-page">
+
+  <div class="results-header">
+    <h1 class="results-title">Discovery results</h1>
+    <p class="results-url text-mono text-secondary">{{ target_url }}</p>
+  </div>
+
+  {% if meta.anti_bot_detected %}
+    <div class="alert alert-warning">
+      Anti-bot protection detected on this page — some candidates may be incomplete or empty.
+    </div>
+  {% endif %}
+
+  {% if meta.frameworks_detected %}
+    <p class="results-meta text-secondary">
+      Detected: {{ meta.frameworks_detected | join(', ') }}
+    </p>
+  {% endif %}
+
+  {% if has_llm %}
+    <div class="results-actions">
+      <a href="/analyze/{{ discover_id }}" class="btn btn-secondary">Analyze with LLM</a>
+      <a href="/bridge/{{ discover_id }}" class="btn btn-secondary">Generate RSS-Bridge script</a>
+    </div>
+  {% endif %}
+
+  {% if not has_results %}
+    <div class="empty-state">
+      <p>No candidates found for this URL.</p>
+      <p class="text-secondary">Try enabling <strong>browser rendering</strong> in Advanced options — some sites require JavaScript to expose their feeds.</p>
+      <a href="/" class="btn btn-secondary mt-4">&larr; Try again</a>
+    </div>
+  {% endif %}
+
+  {% macro section(title, entries, type_partial) %}
+    {% if entries %}
+      <section class="results-section">
+        <div class="section-header">
+          <h2>{{ title }}</h2>
+          <span class="section-count">{{ entries | length }}</span>
+        </div>
+        {% for e in entries[:2] %}
+          {% include type_partial %}
+        {% endfor %}
+        {% if entries | length > 2 %}
+          <details class="more-candidates">
+            <summary>Show {{ entries | length - 2 }} more</summary>
+            {% for e in entries[2:] %}
+              {% include type_partial %}
+            {% endfor %}
+          </details>
+        {% endif %}
+      </section>
+    {% endif %}
+  {% endmacro %}
+
+  {{ section("RSS / Atom Feeds",      rss_feeds,          "partials/candidate_rss.html")      }}
+  {{ section("JSON API Endpoints",    api_endpoints,      "partials/candidate_api.html")      }}
+  {{ section("GraphQL Operations",    graphql_operations, "partials/candidate_graphql.html")  }}
+  {{ section("Embedded JSON Data",    embedded_json,      "partials/candidate_embedded.html") }}
+  {{ section("HTML Scraping (XPath)", xpath_candidates,   "partials/candidate_xpath.html")    }}
+
+  {% if errors %}
+    <details class="results-errors">
+      <summary class="text-secondary">{{ errors | length }} discovery warning(s)</summary>
+      <ul class="errors-list">
+        {% for err in errors %}
+          <li>{{ err }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+<div class="candidate-card" id="card-graphql-{{ e.index }}">
+  <div class="candidate-header">
+    <span class="badge badge-graphql">GraphQL</span>
+    {% if e.c.operation_type %}
+      <span class="candidate-meta text-secondary">{{ e.c.operation_type }}</span>
+    {% endif %}
+    {% if e.c.item_count %}
+      <span class="candidate-meta text-secondary">{{ e.c.item_count }} items</span>
+    {% endif %}
+    {% if e.c.feed_score %}
+      <span class="candidate-confidence">{{ (e.c.feed_score * 100) | int }}% score</span>
+    {% endif %}
+  </div>
+
+  <p class="candidate-url text-mono">{{ e.c.endpoint }}</p>
+  {% if e.c.operation_name %}
+    <p class="candidate-url text-mono text-secondary">{{ e.c.operation_name }}</p>
+  {% endif %}
+
+  {% if e.c.sample_keys %}
+    <p class="candidate-keys text-secondary">
+      Fields: <span class="text-mono">{{ e.c.sample_keys[:8] | join(', ') }}</span>
+    </p>
+  {% endif %}
+
+  <div class="preview-note text-secondary">
+    GraphQL live preview coming in a future update.
+  </div>
+
+  {% if e.c.detected_via %}
+    <p class="text-secondary" style="font-size:12px;margin-top:8px;">Detected via: {{ e.c.detected_via }}</p>
+  {% endif %}
+</div>

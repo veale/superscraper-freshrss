@@ -1,0 +1,55 @@
+{% if errors %}
+  <div class="preview-errors">
+    {% for err in errors[:2] %}
+      <p class="preview-error">{{ err }}</p>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if not items %}
+  <div class="preview-empty text-secondary">No items returned.</div>
+{% else %}
+  <div class="preview-stats">
+    {{ total }} item{% if total != 1 %}s{% endif %}
+    &nbsp;&middot;&nbsp;
+    T={{ field_counts.title }}/{{ total }}
+    U={{ field_counts.link }}/{{ total }}
+    D={{ field_counts.date }}/{{ total }}
+  </div>
+  <table class="preview-table">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Link</th>
+        <th>When</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+        <tr>
+          <td class="preview-title">
+            {% if item.title %}
+              {{ item.title[:80] }}{% if item.title | length > 80 %}…{% endif %}
+            {% else %}
+              <span class="text-tertiary">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if item.link %}
+              <a href="{{ item.link | e }}" target="_blank" rel="noopener noreferrer">open ↗</a>
+            {% else %}
+              <span class="text-tertiary">—</span>
+            {% endif %}
+          </td>
+          <td class="preview-timestamp text-secondary">
+            {% if item.timestamp %}
+              {{ item.timestamp[:16] }}
+            {% else %}
+              <span class="text-tertiary">—</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
