@@ -10,18 +10,19 @@ import re
 
 
 # ── Patterns ──────────────────────────────────────────────────────────────────
-# These three regexes are the heart of Readability's scoring. Do not narrow
-# or reformulate them — they are the product of years of tuning against real
-# websites. Source: Readability.js lines 140-148.
 
 POSITIVE_RE = re.compile(
-    r"article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story",
+    r"article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|"
+    r"blog|story|card|tile|teaser|listing|result|item|media-block|media-list|"
+    r"media-object|media-item|news-item|feed-item|grid-item",
     re.IGNORECASE,
 )
 
+# `media` and `meta` removed — modern component frameworks use these as content
+# class names (Bootstrap media-object, HRW media-block, etc.).
 NEGATIVE_RE = re.compile(
     r"-ad-|hidden|^hid$| hid$| hid |^hid |banner|combx|comment|com-|contact|footer|"
-    r"gdpr|masthead|media|meta|outbrain|promo|related|scroll|share|shoutbox|sidebar|"
+    r"gdpr|masthead|outbrain|promo|related|scroll|share|shoutbox|sidebar|"
     r"skyscraper|sponsor|shopping|tags|widget",
     re.IGNORECASE,
 )

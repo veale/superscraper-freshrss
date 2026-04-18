@@ -27,6 +27,43 @@ _TITLE_TAGS = {"h1", "h2", "h3", "h4", "a"}
 # Minimum repetitions to consider a pattern.
 _MIN_REPEATS = 3
 
+# ── Utility-class stripping ───────────────────────────────────────────────────
+
+_UTILITY_PREFIXES = (
+    "w-", "h-", "m-", "p-", "mx-", "my-", "px-", "py-", "mt-", "mb-", "ml-", "mr-",
+    "pt-", "pb-", "pl-", "pr-", "text-", "bg-", "border-", "flex-",
+    "grid-cols-", "grid-rows-", "grid-flow-",  # specific Tailwind grid utilities only
+    "items-", "justify-", "gap-", "space-", "rounded-", "shadow-", "opacity-",
+    "z-", "top-", "left-", "right-", "bottom-", "max-", "min-", "overflow-",
+    "leading-", "tracking-", "font-", "col-span-", "col-start-", "row-span-",
+    "order-", "grow-", "shrink-",
+    "aspect-", "object-", "inline-",
+)
+
+_UTILITY_VARIANT_RE = re.compile(
+    r"^(sm|md|lg|xl|2xl|3xl|hover|focus|first|last|active|disabled|dark|group-hover):"
+)
+
+
+def _is_utility_class(cls: str) -> bool:
+    if not cls:
+        return True
+    m = _UTILITY_VARIANT_RE.match(cls)
+    if m:
+        return _is_utility_class(cls[m.end():])
+    if cls in {"flex", "grid", "hidden", "block", "inline", "relative", "absolute",
+               "fixed", "sticky", "static"}:
+        return True
+    return any(cls.startswith(p) for p in _UTILITY_PREFIXES)
+
+
+def _meaningful_classes(class_attr: str) -> str:
+    """Return only non-utility class tokens, preserving order."""
+    if not class_attr:
+        return ""
+    kept = [c for c in class_attr.split() if not _is_utility_class(c)]
+    return " ".join(kept)
+
 
 class _StructureParser(HTMLParser):
     """Build a simplified picture of repeated DOM patterns."""
@@ -59,6 +96,8 @@ def _signature(tag: str, attrs: dict[str, str]) -> str:
     parts = [tag]
     for a in sorted(_ROLE_ATTRS):
         v = attrs.get(a, "")
+        if a == "class":
+            v = _meaningful_classes(v)
         if v:
             parts.append(f"{a}={v}")
     return "|".join(parts)
@@ -71,8 +110,8 @@ def _attrs_to_xpath_predicate(attrs: dict[str, str]) -> str:
     testid = attrs.get("data-testid", "").strip()
 
     if cls:
-        # Use contains() for multi-class values.
-        first_cls = cls.split()[0]
+        meaningful = _meaningful_classes(cls)
+        first_cls = (meaningful.split()[0] if meaningful else None) or cls.split()[0]
         return f"[contains(@class, '{first_cls}')]"
     if role:
         return f"[@role='{role}']"
@@ -143,8 +182,8 @@ def generate_xpath_candidates(html: str) -> list[XPathCandidate]:
             deduped.append(c)
 
     # ── Tier 1.3.a: union-selector pass ──────────────────────────────────────
-    # If two candidates share the same tag and differ only by class predicate,
-    # emit a third candidate whose selector is the XPath union.
+    # Emit union candidates for pairs whose individual class predicates differ.
+    # Cross-tag unions (li | article) are allowed when both tags are item tags.
     import re as _re
     _PAT = _re.compile(r"^//(\w+)\[contains\(@class, '([^']+)'\)\]$")
     union_candidates: list[XPathCandidate] = []
@@ -155,7 +194,7 @@ def generate_xpath_candidates(html: str) -> list[XPathCandidate]:
             mb = _PAT.match(b.item_selector)
             if not (ma and mb):
                 continue
-            if ma.group(1) != mb.group(1):
+            if ma.group(1) not in _ITEM_TAGS or mb.group(1) not in _ITEM_TAGS:
                 continue
             if ma.group(2) == mb.group(2):
                 continue

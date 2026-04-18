@@ -787,6 +787,19 @@ kbd {
   margin: 0 var(--space-1);
 }
 
+.selector-changed {
+  color: var(--accent);
+  font-weight: 600;
+  transition: color 0.3s;
+}
+
+.refine-reasoning-note {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin: var(--space-1) 0 var(--space-2);
+  font-style: italic;
+}
+
 .badge-refined {
   background: var(--success);
   color: white;

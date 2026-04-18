@@ -9,7 +9,7 @@
     {% endif %}
   </div>
 
-  <p class="candidate-url text-mono text-secondary">{{ e.c.item_selector }}</p>
+  <p class="candidate-url text-mono text-secondary" id="item-selector-xpath-{{ e.index }}">{{ e.c.item_selector }}</p>
 
   {% if e.auto_preview %}
     <div id="preview-xpath-{{ e.index }}" class="preview-target" data-preview-url="{{ e.preview_url }}">
@@ -144,6 +144,10 @@
       <div class="refine-actions">
         <button type="submit" class="btn btn-primary btn-sm" name="mode" value="examples">
           Refine from examples
+        </button>
+        <button type="submit" class="btn btn-secondary btn-sm" name="mode" value="reanchor"
+                title="Use your example title/link to re-find the item container without an LLM">
+          Re-find container
         </button>
         {% if has_llm %}
           <button type="submit" class="btn btn-secondary btn-sm" name="mode" value="llm">

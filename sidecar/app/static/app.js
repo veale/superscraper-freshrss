@@ -399,6 +399,34 @@ function initCandidateRefine() {
             if (input && data.selectors[key]) input.value = data.selectors[key];
           }
         }
+
+        // Update the visible item-selector header if it changed.
+        if (data.selectors.item_selector) {
+          const urlEl = document.getElementById(`item-selector-xpath-${index}`);
+          if (urlEl && urlEl.textContent !== data.selectors.item_selector) {
+            urlEl.textContent = data.selectors.item_selector;
+            urlEl.classList.add('selector-changed');
+          }
+          // Also update the item_selector input in the advanced xpath editor.
+          const xpathForm = card?.querySelector('.refine-xpath-form');
+          if (xpathForm) {
+            const itemInput = xpathForm.querySelector('input[name="item_selector"]');
+            if (itemInput) itemInput.value = data.selectors.item_selector;
+          }
+        }
+      }
+
+      // Show LLM reasoning note if provided.
+      if (data.reasoning && card) {
+        let note = card.querySelector('.refine-reasoning-note');
+        if (!note) {
+          note = document.createElement('p');
+          note.className = 'refine-reasoning-note text-tertiary';
+          const urlEl = card.querySelector('.candidate-url');
+          if (urlEl) urlEl.insertAdjacentElement('afterend', note);
+          else card.insertBefore(note, card.firstChild);
+        }
+        note.textContent = `LLM: ${data.reasoning}`;
       }
 
       // Add refined badge (LLM mode gets a different label)

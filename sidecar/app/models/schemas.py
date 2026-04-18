@@ -129,6 +129,7 @@ class DiscoveryResults(BaseModel):
     html_skeleton: str = ""
     phase2_used: bool = False
     stealth_used: bool = False
+    force_skip_rss: bool = False
     # Global refine examples stored when user uses the global refine block
     refine_examples: dict[str, list[str]] = Field(default_factory=dict)
     # Per-candidate refinements stored when user uses per-candidate refine

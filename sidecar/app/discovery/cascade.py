@@ -244,6 +244,7 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
             html_skeleton=html_skeleton,
             phase2_used=needs_browser,
             stealth_used=stealth_used,
+            force_skip_rss=req.force_skip_rss,
         ),
         errors=errors,
     )

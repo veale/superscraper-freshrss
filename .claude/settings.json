@@ -69,7 +69,10 @@
       "Bash(.venv/bin/pytest tests/ -q --ignore=tests/test_bridge_contract.py)",
       "Bash(.venv/bin/python -m pytest tests/test_discover_results_page.py -q)",
       "Bash(.venv/bin/python -m pytest tests/ -q --ignore=tests/test_bridge_contract.py --ignore=tests/test_bridge_flow.py --ignore=tests/test_inbound_auth.py)",
-      "Bash(wait)"
+      "Bash(wait)",
+      "Bash(python -m pytest tests/test_node_scoring.py tests/test_selector_generation.py tests/test_example_anchored.py -v)",
+      "Bash(python -m pytest --timeout=30 -x -q)",
+      "Bash(python -m pytest --timeout=30 -q --ignore=tests/test_bridge_contract.py)"
     ],
     "additionalDirectories": [
       "/tmp",

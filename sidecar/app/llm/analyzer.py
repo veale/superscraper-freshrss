@@ -16,12 +16,12 @@ from app.models.schemas import (
 
 
 def should_invoke_llm(results: DiscoveryResults) -> tuple[bool, str]:
-    """Return (needs_llm, auto_strategy) — skip the LLM when unambiguous.
-
-    When the decision is obvious (one live RSS, one high-scoring JSON API),
-    build the recommendation without wasting tokens on an LLM round-trip.
-    """
-    if results.rss_feeds and any(f.is_alive for f in results.rss_feeds):
+    """Return (needs_llm, auto_strategy) — skip the LLM when unambiguous."""
+    if (
+        not results.force_skip_rss
+        and results.rss_feeds
+        and any(f.is_alive for f in results.rss_feeds)
+    ):
         return False, "rss"
     if (
         len(results.api_endpoints) == 1
@@ -100,11 +100,11 @@ async def recommend_candidate_selectors(
     candidate,
     html_skeleton: str,
     llm,
+    refine_examples: dict[str, list[str]] | None = None,
 ) -> dict:
-    """Ask the LLM to improve one XPath candidate's field selectors.
+    """Ask the LLM to improve one XPath candidate's selectors, including item_selector.
 
-    Returns a dict with the same keys as XPathCandidate selector fields.
-    Any null value means "keep current selector".
+    Returns a dict with selector keys plus 'reasoning'. Any null value means keep current.
     """
     client = LLMClient(
         endpoint=llm.endpoint,
@@ -114,15 +114,41 @@ async def recommend_candidate_selectors(
     )
 
     system = (
-        "You are an HTML feed-selector expert. "
-        "Given one page skeleton and one set of existing XPath selectors "
-        "that aren't producing clean titles/dates, propose replacements. "
-        "Return ONLY a JSON object with keys: "
-        "title_selector, link_selector, content_selector, "
-        "timestamp_selector, author_selector, thumbnail_selector. "
-        "Use relative XPath starting with .//. "
-        "Set a key to null to keep the current selector unchanged."
+        "You are an HTML feed-selector expert. Your job is to produce XPath "
+        "selectors that extract a list of news/article items from a single "
+        "rendered web page.\n"
+        "\n"
+        "You receive:\n"
+        "  - the current item selector and field selectors (may be wrong),\n"
+        "  - an HTML skeleton of the page,\n"
+        "  - OPTIONAL user-supplied example values (title text, link URL, etc.)\n"
+        "    that identify one real item on the page.\n"
+        "\n"
+        "Return a JSON object with these keys, any of which may be null to keep "
+        "the existing value:\n"
+        "  - item_selector (XPath expression starting with // that selects item containers)\n"
+        "  - title_selector, link_selector, content_selector, timestamp_selector,\n"
+        "    author_selector, thumbnail_selector (all RELATIVE XPath starting with .//)\n"
+        "  - reasoning (one sentence explaining the change)\n"
+        "\n"
+        "Critical guidance:\n"
+        "  - You MAY change item_selector. Do so when the current selector yields "
+        "zero elements, selects obvious non-items (navigation, ads), or when "
+        "example values suggest a different container is correct.\n"
+        "  - XPath unions across different tag names are allowed and encouraged "
+        "when a page has two parallel item families (e.g. "
+        "'//li[contains(@class,\"grid-item\")] | //article[contains(@class,\"media-block\")]').\n"
+        "  - Component-framework class names like 'media-block', 'media-list__item', "
+        "'card', 'tile', 'teaser', 'grid-item', 'news-item' are STRONG positive "
+        "signals for item containers. Do not dismiss them as boilerplate.\n"
+        "  - If user examples are provided, your selectors MUST match them. Verify "
+        "mentally: 'does my title_selector produce the example title when "
+        "applied inside my item_selector?'\n"
+        "  - Prefer semantic tags (article, li, section) and content-bearing class "
+        "names over div-with-utility-classes.\n"
+        "Return JSON only, no prose."
     )
+
     skeleton_excerpt = html_skeleton[:8000] if html_skeleton else "(not available)"
     user = (
         f"Page URL: {url}\n\n"
@@ -134,9 +160,17 @@ async def recommend_candidate_selectors(
         f"  timestamp: {candidate.timestamp_selector}\n"
         f"  author: {candidate.author_selector}\n"
         f"  thumbnail: {candidate.thumbnail_selector}\n\n"
-        f"HTML skeleton (first 8000 chars):\n{skeleton_excerpt}\n\n"
-        "Propose improved selectors. Return JSON only."
+        f"HTML skeleton (first 8000 chars):\n{skeleton_excerpt}\n"
     )
+
+    if refine_examples:
+        user += "\nUSER EXAMPLES (one real item on this page):\n"
+        for role, vals in refine_examples.items():
+            if vals:
+                user += f"  {role}: {vals[0]}\n"
+        user += "Your selectors must reproduce these when applied to the page.\n"
+
+    user += "\nPropose improved selectors. Return JSON only."
 
     try:
         result = await client.chat_completion(system, user)
@@ -145,10 +179,13 @@ async def recommend_candidate_selectors(
 
     raw = result.content
     _fields = (
+        "item_selector",
         "title_selector", "link_selector", "content_selector",
         "timestamp_selector", "author_selector", "thumbnail_selector",
     )
-    return {k: raw.get(k) or None for k in _fields}
+    selectors = {k: raw.get(k) or None for k in _fields}
+    selectors["reasoning"] = str(raw.get("reasoning", "") or "")
+    return selectors
 
 
 async def generate_bridge(req: BridgeGenerateRequest) -> BridgeGenerateResponse:

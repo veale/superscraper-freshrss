@@ -697,6 +697,13 @@ async def candidate_refine(request: Request):
     # ── mode: llm ─────────────────────────────────────────────────────────────
     if mode == "llm":
         from app.llm.analyzer import recommend_candidate_selectors
+        from lxml import etree as _lxml_etree
+
+        refine_examples: dict[str, list[str]] = {}
+        for role in ("title", "link", "content", "timestamp", "author", "thumbnail"):
+            val = str(form.get(f"{role}_example", "") or "").strip()
+            if val:
+                refine_examples[role] = [val]
 
         llm = _llm_config()
         if llm is None:
@@ -710,9 +717,22 @@ async def candidate_refine(request: Request):
                 candidate=c,
                 html_skeleton=stored.get("html_skeleton", ""),
                 llm=llm,
+                refine_examples=refine_examples or None,
             )
         except RuntimeError as exc:
             return JSONResponse({"error": str(exc)}, status_code=502)
+
+        reasoning = improved.pop("reasoning", "") or ""
+
+        # Validate LLM-proposed item_selector before applying.
+        new_item_sel = improved.get("item_selector")
+        item_sel_warning = None
+        if new_item_sel:
+            try:
+                _lxml_etree.XPath(new_item_sel)
+                c.item_selector = new_item_sel
+            except _lxml_etree.XPathSyntaxError as exc:
+                item_sel_warning = f"LLM proposed invalid item_selector ({exc}); keeping original."
 
         c.title_selector     = improved.get("title_selector")     or c.title_selector
         c.link_selector      = improved.get("link_selector")      or c.link_selector
@@ -727,6 +747,63 @@ async def candidate_refine(request: Request):
             html, sel, _ = await fetch_and_parse(result.url, services, timeout=30)
         except RuntimeError as exc:
             return JSONResponse({"error": f"Fetch failed: {str(exc)[:200]}"}, status_code=502)
+
+        selectors = ScrapeSelectors(
+            item=c.item_selector,
+            item_title=c.title_selector,
+            item_link=c.link_selector,
+            item_content=c.content_selector,
+            item_timestamp=c.timestamp_selector,
+            item_author=c.author_selector,
+            item_thumbnail=c.thumbnail_selector,
+        )
+        req = ScrapeRequest(
+            url=result.url, strategy=FeedStrategy.XPATH,
+            selectors=selectors, services=services, adaptive=False,
+        )
+        items, warnings, _ = await _scrape_xpath_from_selector(req, sel, html)
+        if item_sel_warning:
+            warnings = [item_sel_warning] + list(warnings)
+        resp = _render_preview_json(items[:10], [], warnings)
+        # Attach reasoning to the response body.
+        import json as _json
+        body = _json.loads(resp.body)
+        body["reasoning"] = reasoning
+        return JSONResponse(body)
+
+    # ── mode: reanchor ────────────────────────────────────────────────────────
+    if mode == "reanchor":
+        from app.discovery.example_anchored import find_item_selectors_from_example
+        from app.scraping.scrape import fetch_and_parse, _scrape_xpath_from_selector
+
+        anchor = ""
+        for role in ("title", "link", "content"):
+            v = str(form.get(f"{role}_example", "") or "").strip()
+            if v:
+                anchor = v
+                break
+        if not anchor:
+            return JSONResponse(
+                {"error": "Provide at least one example (title, link, or content) to re-anchor."},
+                status_code=400,
+            )
+
+        try:
+            html, sel, _ = await fetch_and_parse(result.url, services, timeout=30)
+        except RuntimeError as exc:
+            return JSONResponse({"error": f"Fetch failed: {str(exc)[:200]}"}, status_code=502)
+
+        new_selectors = find_item_selectors_from_example(html, anchor)
+        if not new_selectors:
+            return JSONResponse({
+                "error": (
+                    f"Couldn't find '{anchor[:40]}...' on the page. "
+                    "Is the example text exactly as shown on the live site?"
+                )
+            }, status_code=422)
+
+        c.item_selector = new_selectors[0]
+        _persist_candidate()
 
         selectors = ScrapeSelectors(
             item=c.item_selector,
@@ -779,6 +856,42 @@ async def candidate_refine(request: Request):
         return JSONResponse({"error": f"Fetch failed: {str(exc)[:200]}"}, status_code=502)
 
     items, warnings, updated_sel = await _scrape_xpath_from_selector(req, sel, html)
+
+    # If existing item_selector yielded nothing, try re-anchoring from example.
+    if not items and examples_lists:
+        from app.discovery.example_anchored import find_item_selectors_from_example
+        anchor = next(iter(examples_lists.get("title") or examples_lists.get("link") or []), "")
+        if anchor:
+            new_selectors = find_item_selectors_from_example(html, anchor)
+            if new_selectors:
+                anchor_role = "title" if examples_lists.get("title") else "link"
+                warnings = list(warnings) + [
+                    f"Original selector matched 0 items. Re-anchored to {new_selectors[0]} "
+                    f"using your '{anchor_role}' example."
+                ]
+                c.item_selector = new_selectors[0]
+                _persist_candidate()
+                selectors = ScrapeSelectors(
+                    item=c.item_selector,
+                    item_title=c.title_selector,
+                    item_link=c.link_selector,
+                    item_content=c.content_selector,
+                    item_timestamp=c.timestamp_selector,
+                    item_author=c.author_selector,
+                    item_thumbnail=c.thumbnail_selector,
+                    title_examples=examples_lists.get("title", []),
+                    link_examples=examples_lists.get("link", []),
+                    content_examples=examples_lists.get("content", []),
+                    timestamp_examples=examples_lists.get("timestamp", []),
+                    author_examples=examples_lists.get("author", []),
+                    thumbnail_examples=examples_lists.get("thumbnail", []),
+                )
+                req = ScrapeRequest(
+                    url=result.url, strategy=FeedStrategy.XPATH,
+                    selectors=selectors, services=services, adaptive=False,
+                )
+                items, warnings2, updated_sel = await _scrape_xpath_from_selector(req, sel, html)
+                warnings = warnings + list(warnings2)
 
     c.title_selector     = updated_sel.item_title     or c.title_selector
     c.link_selector      = updated_sel.item_link      or c.link_selector
@@ -1163,9 +1276,10 @@ async def analyze(
             ),
         )
 
-    if force:
+    if force or disc.results.force_skip_rss:
         _logging.getLogger(__name__).info(
-            "LLM short-circuit overridden by user (discover_id=%s)", discover_id
+            "LLM short-circuit overridden (discover_id=%s, force=%s, force_skip_rss=%s)",
+            discover_id, force, disc.results.force_skip_rss,
         )
         needs_llm, auto_strategy = True, ""
     else:

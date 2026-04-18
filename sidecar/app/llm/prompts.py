@@ -15,11 +15,23 @@ from app.models.schemas import (
 
 # ── Strategy selection ────────────────────────────────────────────────────────
 
-STRATEGY_SYSTEM = (
+_RSS_PREFERRED = (
+    "Prefer robustness in this order: rss > json_api > graphql > embedded_json > xpath."
+)
+
+_RSS_DISQUALIFIED = (
+    "IMPORTANT: the user has explicitly asked to ignore RSS feeds on this page "
+    "(they already know the advertised RSS is wrong, dead, or too generic). "
+    "Treat RSS as disqualified. Prefer robustness in this order: "
+    "json_api > graphql > embedded_json > xpath > rss_bridge. Under no circumstances "
+    "return 'rss' as the strategy."
+)
+
+_STRATEGY_SYSTEM_BASE = (
     "You are a feed-discovery assistant. "
     "Given a URL, an HTML skeleton, and candidate feed-extraction strategies already detected, "
     "pick the single best strategy for a reliable RSS feed. "
-    "Prefer robustness in this order: rss > json_api > graphql > embedded_json > xpath. "
+    "{ordering_clause} "
     "Do NOT pick rss_bridge unless every other strategy has been evaluated and is unusable "
     "(e.g. heavy session state, anti-bot that only works with authenticated browser sessions, "
     "site-specific OAuth). When in doubt between xpath and rss_bridge, pick xpath. "
@@ -27,6 +39,8 @@ STRATEGY_SYSTEM = (
     "whenever a native strategy is viable. "
     "Reply with one JSON object matching the schema. No prose outside the JSON."
 )
+
+STRATEGY_SYSTEM = _STRATEGY_SYSTEM_BASE.format(ordering_clause=_RSS_PREFERRED)
 
 STRATEGY_USER_TEMPLATE = """\
 URL: {url}
@@ -153,15 +167,19 @@ HTML SKELETON (truncated):
 
 def render_strategy_prompt(req: AnalyzeRequest) -> tuple[str, str]:
     """Return (system, user) strings for strategy selection."""
-    r = req.results
+    from app.models.schemas import DiscoveryResults as _DR
+    r = req.results or _DR()
     skeleton = req.html_skeleton or r.html_skeleton
+    ordering = _RSS_DISQUALIFIED if r.force_skip_rss else _RSS_PREFERRED
+    system = _STRATEGY_SYSTEM_BASE.format(ordering_clause=ordering)
+    rss_for_prompt = [] if r.force_skip_rss else r.rss_feeds
     user = STRATEGY_USER_TEMPLATE.format(
         url=req.url,
         page_title=r.page_meta.page_title or "(unknown)",
         frameworks=", ".join(r.page_meta.frameworks_detected) or "none",
         anti_bot=str(r.page_meta.anti_bot_detected).lower(),
-        n_rss=len(r.rss_feeds),
-        rss_summary=_rss_summary(r.rss_feeds),
+        n_rss=len(rss_for_prompt),
+        rss_summary=_rss_summary(rss_for_prompt) if rss_for_prompt else "none (user-excluded)",
         n_api=len(r.api_endpoints),
         api_summary=_api_summary(r.api_endpoints),
         n_ej=len(r.embedded_json),
@@ -172,7 +190,7 @@ def render_strategy_prompt(req: AnalyzeRequest) -> tuple[str, str]:
         xp_summary=_xp_summary(r.xpath_candidates),
         skeleton=skeleton[:8_000] if skeleton else "(not available)",
     )
-    return STRATEGY_SYSTEM, user
+    return system, user
 
 
 def render_bridge_prompt(req: BridgeGenerateRequest) -> tuple[str, str]:
