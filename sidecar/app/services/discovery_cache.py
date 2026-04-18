@@ -64,3 +64,24 @@ def load_discovery(discover_id: str) -> dict | None:
         return json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def update_discovery(discover_id: str, payload: dict) -> bool:
+    """Update an existing discovery cache entry. Returns True on success."""
+    if not _ID_PATTERN.fullmatch(discover_id):
+        return False
+    path = _cache_dir() / f"{discover_id}.json"
+    if not path.exists():
+        return False
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(payload))
+        os.replace(tmp, path)
+        return True
+    except OSError:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        return False

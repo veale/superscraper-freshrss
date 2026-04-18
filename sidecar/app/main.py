@@ -217,6 +217,7 @@ async def discover(request: Request):
             url=url,
             use_browser=bool(form.get("use_browser")),
             force_skip_rss=bool(form.get("force_skip_rss")),
+            force_stealth=bool(form.get("force_stealth")),
             services=_settings_services(),
         )
     else:

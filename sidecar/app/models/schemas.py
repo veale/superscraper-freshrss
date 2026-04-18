@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 from app.services.config import ServiceConfig
 
@@ -46,6 +46,10 @@ class DiscoverRequest(BaseModel):
         False,
         description="Treat any discovered RSS feed as if it were missing, forcing Phase 2",
     )
+    force_stealth: bool = Field(
+        False,
+        description="Force stealth mode (anti-bot evasion) even if not detected",
+    )
     services: ServiceConfig = Field(default_factory=ServiceConfig)
 
 
@@ -75,6 +79,7 @@ class EmbeddedJSON(BaseModel):
     path: str = ""  # dot-notation path to the feed-like array
     item_count: int = 0
     sample_keys: list[str] = Field(default_factory=list)
+    sample_item: Optional[dict[str, Any]] = None  # Sample item for LLM context
     feed_score: float = 0.0
     field_mapping: dict[str, str] = Field(default_factory=dict)
 
@@ -123,6 +128,8 @@ class DiscoveryResults(BaseModel):
     html_skeleton: str = ""
     phase2_used: bool = False
     stealth_used: bool = False
+    # Global refine examples stored when user uses the global refine block
+    refine_examples: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class DiscoverResponse(BaseModel):
@@ -227,12 +234,47 @@ class ScrapeSelectors(BaseModel):
     item_thumbnail: str = ""
     item_author: str = ""
     example_text: str = ""      # item-level text for AutoScraper-style item recovery
-    title_example: str = ""     # example text for per-field recovery
+    # Plural examples for per-field recovery (multiple examples for union selectors)
+    title_examples: list[str] = Field(default_factory=list)
+    link_examples: list[str] = Field(default_factory=list)
+    content_examples: list[str] = Field(default_factory=list)
+    timestamp_examples: list[str] = Field(default_factory=list)
+    author_examples: list[str] = Field(default_factory=list)
+    thumbnail_examples: list[str] = Field(default_factory=list)
+
+    # Legacy singular fields (for migration from saved configs)
+    title_example: str = ""
     link_example: str = ""
     content_example: str = ""
     timestamp_example: str = ""
     author_example: str = ""
     thumbnail_example: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_singular_to_plural(cls, data: Any) -> Any:
+        """Migrate singular *_example fields to plural *_examples lists."""
+        if isinstance(data, dict):
+            # Map of singular to plural field names
+            singular_to_plural = {
+                "title_example": "title_examples",
+                "link_example": "link_examples",
+                "content_example": "content_examples",
+                "timestamp_example": "timestamp_examples",
+                "author_example": "author_examples",
+                "thumbnail_example": "thumbnail_examples",
+            }
+            for singular, plural in singular_to_plural.items():
+                # If plural doesn't exist but singular does, migrate
+                if singular in data:
+                    singular_val = data[singular]
+                    if singular_val and isinstance(singular_val, str):
+                        # Add to plural list if not already present
+                        if plural not in data or not data[plural]:
+                            data[plural] = [singular_val]
+                        elif isinstance(data[plural], list) and singular_val not in data[plural]:
+                            data[plural].append(singular_val)
+        return data
 
 
 class ScrapeRequest(BaseModel):

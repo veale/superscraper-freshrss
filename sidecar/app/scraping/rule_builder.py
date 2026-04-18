@@ -285,6 +285,63 @@ def recover_field_selector(
     return best_xpath
 
 
+def recover_field_selectors(
+    item_html: str,
+    examples: list[str],
+    full_page_html: str,
+    item_xpath: str,
+    ratio_limit: float = 0.85,
+) -> list[str]:
+    """Find relative XPaths for a field matching any of the provided examples.
+
+    *item_html*:     HTML of one representative item (as a string fragment).
+    *examples*:      List of expected text or URL substrings for this field.
+    *full_page_html*: The full rendered page HTML for hit-rate verification.
+    *item_xpath*:    The item-level selector (used to count non-empty hits).
+
+    Returns a list of relative XPath strings, deduplicated and sorted by
+    hit-rate descending. When multiple examples are provided, returns XPaths
+    for all of them; the caller can combine with XPath union operator.
+    """
+    if not examples:
+        return []
+
+    # Collect all candidate XPaths from all examples
+    all_candidates: dict[str, int] = {}  # xpath -> hit_count
+
+    for example_text in examples:
+        if not example_text:
+            continue
+
+        result = recover_field_selector(
+            item_html, example_text, full_page_html, item_xpath, ratio_limit
+        )
+        if result:
+            # Count hits for this XPath
+            try:
+                from lxml.html import document_fromstring
+                doc = document_fromstring(full_page_html)
+                items = doc.xpath(item_xpath)
+                hit_count = 0
+                for item in items[:20]:
+                    try:
+                        r = item.xpath(result)
+                        if r:
+                            v = r[0]
+                            text = v.text_content().strip() if hasattr(v, "text_content") else str(v).strip()
+                            if text:
+                                hit_count += 1
+                    except Exception:
+                        pass
+                all_candidates[result] = hit_count
+            except Exception:
+                all_candidates[result] = 0
+
+    # Sort by hit count descending
+    sorted_xpaths = sorted(all_candidates.keys(), key=lambda x: all_candidates[x], reverse=True)
+    return sorted_xpaths
+
+
 def _relative_xpath_within_item(
     leaf: "HtmlElement", item_root: "HtmlElement"
 ) -> str | None:

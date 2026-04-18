@@ -415,17 +415,26 @@ async def _scrape_xpath(
     # 4. Attempt per-field selector recovery for fields with examples that return blanks.
     sel_updated = req.selectors
     _FIELD_EXAMPLES = [
-        ("item_title",     "title_example",     "title"),
-        ("item_link",      "link_example",      "link"),
-        ("item_content",   "content_example",   "content"),
-        ("item_timestamp", "timestamp_example", "timestamp"),
-        ("item_author",    "author_example",    "author"),
-        ("item_thumbnail", "thumbnail_example", "thumbnail"),
+        ("item_title",     "title_examples",     "title"),
+        ("item_link",      "link_examples",      "link"),
+        ("item_content",   "content_examples",   "content"),
+        ("item_timestamp", "timestamp_examples", "timestamp"),
+        ("item_author",    "author_examples",    "author"),
+        ("item_thumbnail", "thumbnail_examples", "thumbnail"),
     ]
-    for field_attr, example_attr, label in _FIELD_EXAMPLES:
-        example_val = getattr(req.selectors, example_attr, "")
-        if not example_val:
+    for field_attr, examples_attr, label in _FIELD_EXAMPLES:
+        # Get plural examples list, fall back to singular for migration
+        examples_list = getattr(req.selectors, examples_attr, [])
+        if not examples_list:
+            # Check legacy singular field for migration
+            singular_attr = examples_attr.replace("_examples", "_example")
+            singular_val = getattr(req.selectors, singular_attr, "")
+            if singular_val:
+                examples_list = [singular_val]
+
+        if not examples_list:
             continue
+
         test_items = [_map_element(el, req.selectors, base_url=req.url) for el in elements[:3]]
         non_empty = sum(1 for it in test_items if getattr(it, label, ""))
         if non_empty >= len(test_items) // 2 + 1:
@@ -433,22 +442,32 @@ async def _scrape_xpath(
 
         # Try to recover a better selector by scanning up to 5 items.
         try:
-            from app.scraping.rule_builder import recover_field_selector
+            from app.scraping.rule_builder import recover_field_selectors
             item_html = ""
+            # Find an item HTML that contains any of the examples
             for el in elements[:5]:
                 frag = _serialise_scrapling_element(el)
-                if example_val.lower() in frag.lower():
-                    item_html = frag
+                for ex in examples_list:
+                    if ex.lower() in frag.lower():
+                        item_html = frag
+                        break
+                if item_html:
                     break
                 if len(frag) > len(item_html):
                     item_html = frag
+
             if item_html:
-                recovered = recover_field_selector(
-                    item_html, example_val, html, req.selectors.item
+                recovered_xpaths = recover_field_selectors(
+                    item_html, examples_list, html, req.selectors.item
                 )
-                if recovered:
-                    sel_updated = sel_updated.model_copy(update={field_attr: recovered})
-                    warnings.append(f"Recovered {field_attr} via example: {recovered}")
+                if len(recovered_xpaths) >= 2:
+                    # Multiple distinct XPaths - create union selector
+                    merged = " | ".join(f"({xp})" for xp in recovered_xpaths)
+                    sel_updated = sel_updated.model_copy(update={field_attr: merged})
+                    warnings.append(f"Recovered {field_attr} via union: {merged}")
+                elif recovered_xpaths:
+                    sel_updated = sel_updated.model_copy(update={field_attr: recovered_xpaths[0]})
+                    warnings.append(f"Recovered {field_attr} via example: {recovered_xpaths[0]}")
         except Exception as exc:
             warnings.append(f"Field recovery error for {field_attr}: {exc}")
 

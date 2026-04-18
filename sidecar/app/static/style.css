@@ -638,6 +638,84 @@ kbd {
   margin-bottom: var(--space-6);
 }
 
+/* Global refine block */
+.global-refine {
+  margin-bottom: var(--space-4);
+}
+
+.global-refine > summary {
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.refine-summary-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.refine-summary-hint {
+  font-size: 12px;
+}
+
+.refine-form {
+  padding: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.refine-field {
+  margin-bottom: var(--space-3);
+}
+
+.refine-field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: var(--space-1);
+}
+
+.refine-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.refine-input-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.refine-input-row input {
+  flex: 1;
+}
+
+.refine-form .btn-primary {
+  margin-top: var(--space-3);
+}
+
+/* Retry options */
+.retry-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) 0;
+}
+
+.retry-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.retry-form .btn-secondary {
+  flex-shrink: 0;
+}
+
 .results-section {
   margin-bottom: var(--space-6);
 }

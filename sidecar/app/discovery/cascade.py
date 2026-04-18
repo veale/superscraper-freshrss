@@ -162,8 +162,9 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
     stealth_used = False
     if needs_browser:
         # ── Step 4: Network interception ───────────────────────────────────
-        # Auto-promote to stealth when anti-bot markers are detected.
-        use_stealth = page_meta.anti_bot_detected
+        # Auto-promote to stealth when anti-bot markers are detected,
+        # or when user explicitly requests it via force_stealth.
+        use_stealth = page_meta.anti_bot_detected or req.force_stealth
         if use_stealth:
             stealth_used = True
         network_responses: list[dict] = []

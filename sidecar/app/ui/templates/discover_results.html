@@ -30,6 +30,78 @@
     </div>
   {% endif %}
 
+  {# Global refine block - allows users to provide examples before saving #}
+  <details class="global-refine card">
+    <summary>
+      <span class="refine-summary-title">Refine with examples</span>
+      <span class="refine-summary-hint text-secondary">
+        Paste values from real items to help AutoFeed find the right fields
+      </span>
+    </summary>
+    <form id="global-refine-form" class="refine-form">
+      <input type="hidden" name="discover_id" value="{{ discover_id }}">
+
+      {% for role, label, placeholder in [
+            ("title",     "Title examples",     "e.g. My blog post title"),
+            ("link",      "Link examples",      "e.g. https://…/post-slug"),
+            ("content",   "Content examples",   "e.g. first sentence…"),
+            ("timestamp", "Timestamp examples", "e.g. 2026-04-18"),
+            ("author",    "Author examples",    "e.g. Jane Doe"),
+            ("thumbnail", "Thumbnail examples", "e.g. cover.jpg"),
+       ] %}
+        <div class="refine-field" data-role="{{ role }}">
+          <label>{{ label }}</label>
+          <div class="refine-inputs">
+            <input type="text" name="{{ role }}_examples" placeholder="{{ placeholder }}">
+          </div>
+          <button type="button" class="btn btn-sm btn-secondary refine-add" data-role="{{ role }}">
+            + Add another
+          </button>
+        </div>
+      {% endfor %}
+
+      <button type="submit" class="btn btn-primary">Apply to all candidates</button>
+    </form>
+  </details>
+
+  {# Retry options for different discovery modes #}
+  {% set phase2_ran = results.phase2_used if results else False %}
+  {% set stealth_ran = results.stealth_used if results else False %}
+
+  <div class="retry-options">
+    {% if not phase2_ran %}
+      <form method="post" action="/discover" class="retry-form">
+        <input type="hidden" name="url" value="{{ target_url }}">
+        <input type="hidden" name="use_browser" value="1">
+        <button type="submit" class="btn btn-secondary">
+          Try again with browser rendering
+        </button>
+        <span class="text-tertiary">Captures JavaScript-only content (XHR, GraphQL, etc.)</span>
+      </form>
+    {% endif %}
+
+    {% if phase2_ran and not stealth_ran and meta.anti_bot_detected %}
+      <form method="post" action="/discover" class="retry-form">
+        <input type="hidden" name="url" value="{{ target_url }}">
+        <input type="hidden" name="use_browser" value="1">
+        <input type="hidden" name="force_stealth" value="1">
+        <button type="submit" class="btn btn-secondary">
+          Try with anti-bot evasion (Stealth)
+        </button>
+        <span class="text-tertiary">Bypasses Cloudflare / similar challenges</span>
+      </form>
+    {% endif %}
+
+    <form method="post" action="/discover" class="retry-form">
+      <input type="hidden" name="url" value="{{ target_url }}">
+      <input type="hidden" name="force_skip_rss" value="1">
+      <button type="submit" class="btn btn-secondary">
+        Skip RSS, force deep scan
+      </button>
+      <span class="text-tertiary">Useful when the site advertises a dead or boring RSS feed</span>
+    </form>
+  </div>
+
   {% if not has_results %}
     <div class="empty-state">
       <p>No candidates found for this URL.</p>

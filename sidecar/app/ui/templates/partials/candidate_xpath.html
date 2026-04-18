@@ -70,32 +70,6 @@
               <option value="on_demand">On demand only</option>
             </select>
           </div>
-          <details class="refine-examples">
-            <summary class="text-secondary" style="font-size:12px;cursor:pointer;margin-bottom:6px;">
-              Refine with examples (optional)
-            </summary>
-            <p class="text-tertiary" style="font-size:11px;margin-bottom:6px;">
-              Paste a value from one real item to help AutoFeed find missing fields.
-            </p>
-            <div class="field-grid-2">
-              <div class="field">
-                <label for="title-ex-{{ e.index }}">Title example</label>
-                <input type="text" id="title-ex-{{ e.index }}" name="title_example" placeholder="e.g. My blog post title">
-              </div>
-              <div class="field">
-                <label for="link-ex-{{ e.index }}">Link example</label>
-                <input type="text" id="link-ex-{{ e.index }}" name="link_example" placeholder="e.g. https://…/post-slug">
-              </div>
-              <div class="field">
-                <label for="content-ex-{{ e.index }}">Content example</label>
-                <input type="text" id="content-ex-{{ e.index }}" name="content_example" placeholder="e.g. first sentence…">
-              </div>
-              <div class="field">
-                <label for="ts-ex-{{ e.index }}">Timestamp example</label>
-                <input type="text" id="ts-ex-{{ e.index }}" name="timestamp_example" placeholder="e.g. 2024-01-15">
-              </div>
-            </div>
-          </details>
           <button type="submit" class="btn btn-primary btn-sm">Save</button>
         </form>
       </div>

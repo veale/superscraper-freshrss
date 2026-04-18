@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 _templates_dir = os.path.join(os.path.dirname(__file__), "templates")
@@ -295,6 +295,10 @@ async def preview_refine(request: Request) -> HTMLResponse:
     def f(k: str) -> str:
         return str(form.get(k, "")).strip()
 
+    def fl(k: str) -> list[str]:
+        """Get list of values for a multi-value form field."""
+        return [v.strip() for v in form.getlist(k) if v.strip()]
+
     req = ScrapeRequest(
         url=result.url,
         strategy=FeedStrategy.XPATH,
@@ -305,10 +309,13 @@ async def preview_refine(request: Request) -> HTMLResponse:
             item_content=c.content_selector,
             item_timestamp=c.timestamp_selector,
             item_thumbnail=c.thumbnail_selector,
-            title_example=f("title_example"),
-            link_example=f("link_example"),
-            content_example=f("content_example"),
-            timestamp_example=f("timestamp_example"),
+            # Support both singular (legacy) and plural (new) form fields
+            title_examples=fl("title_examples") or [f("title_example")] if f("title_example") else [],
+            link_examples=fl("link_examples") or [f("link_example")] if f("link_example") else [],
+            content_examples=fl("content_examples") or [f("content_example")] if f("content_example") else [],
+            timestamp_examples=fl("timestamp_examples") or [f("timestamp_example")] if f("timestamp_example") else [],
+            author_examples=fl("author_examples") or [f("author_example")] if f("author_example") else [],
+            thumbnail_examples=fl("thumbnail_examples") or [f("thumbnail_example")] if f("thumbnail_example") else [],
         ),
         services=services,
         adaptive=False,
@@ -337,6 +344,103 @@ async def preview_refine(request: Request) -> HTMLResponse:
         )
     except Exception as exc:
         return _err(f"Refine failed: {str(exc)[:300]}")
+
+
+@router.post("/preview-fragment-refined")
+async def preview_fragment_refined(request: Request):
+    """Re-run every candidate's preview with the global refine examples injected.
+
+    Returns a dict {type: {index: html}} that the client applies to existing
+    .preview-target nodes.
+    """
+    from app.services.discovery_cache import load_discovery, update_discovery
+    from app.models.schemas import DiscoverResponse, FeedStrategy, ScrapeRequest, ScrapeSelectors
+    from app.scraping.scrape import run_scrape
+
+    form = await request.form()
+    discover_id = str(form.get("discover_id", "")).strip()
+    services = _service_config()
+
+    stored = load_discovery(discover_id)
+    if stored is None:
+        return JSONResponse({"error": "Discovery result expired."}, status_code=400)
+
+    result = DiscoverResponse.model_validate({**stored, "discover_id": discover_id})
+    res = result.results
+
+    # Collect examples from form
+    refine_examples: dict[str, list[str]] = {}
+    for role in ["title", "link", "content", "timestamp", "author", "thumbnail"]:
+        examples = [v.strip() for v in form.getlist(f"{role}_examples") if v.strip()]
+        if examples:
+            refine_examples[role] = examples
+
+    # Store refine examples on the discovery record
+    if refine_examples:
+        res.refine_examples = refine_examples
+        # Update stored discovery
+        update_discovery(discover_id, {
+            "url": result.url,
+            "timestamp": result.timestamp.isoformat(),
+            "results": res.model_dump(),
+            "errors": result.errors,
+        })
+
+    # Build response: {type: {index: html}}
+    response_data: dict[str, dict[str, str]] = {}
+
+    # Process XPath candidates
+    if res.xpath_candidates:
+        response_data["xpath"] = {}
+        for idx, c in enumerate(res.xpath_candidates):
+            # Merge global refine examples with any stored per-candidate refinements
+            selectors = ScrapeSelectors(
+                item=c.item_selector,
+                item_title=c.title_selector,
+                item_link=c.link_selector,
+                item_content=c.content_selector,
+                item_timestamp=c.timestamp_selector,
+                item_thumbnail=c.thumbnail_selector,
+                title_examples=refine_examples.get("title", []),
+                link_examples=refine_examples.get("link", []),
+                content_examples=refine_examples.get("content", []),
+                timestamp_examples=refine_examples.get("timestamp", []),
+                author_examples=refine_examples.get("author", []),
+                thumbnail_examples=refine_examples.get("thumbnail", []),
+            )
+
+            req = ScrapeRequest(
+                url=result.url,
+                strategy=FeedStrategy.XPATH,
+                selectors=selectors,
+                services=services,
+                adaptive=False,
+            )
+
+            try:
+                scrape = await run_scrape(req)
+                items = scrape.items[:10]
+                total = len(items)
+                fc = {
+                    "title": sum(1 for it in items if it.title),
+                    "link": sum(1 for it in items if it.link),
+                    "date": sum(1 for it in items if it.timestamp),
+                }
+
+                html = templates.get_template("partials/preview_table.html").render(
+                    request=request,
+                    items=[it.model_dump() for it in items],
+                    total=total,
+                    field_counts=fc,
+                    errors=scrape.errors,
+                    warnings=scrape.warnings,
+                    refine_url=None,
+                )
+                response_data["xpath"][str(idx)] = html
+            except Exception as exc:
+                response_data["xpath"][str(idx)] = f'<div class="preview-error">{str(exc)[:200]}</div>'
+
+    return JSONResponse(response_data)
 
 
 # ── Save ─────────────────────────────────────────────────────────────────────

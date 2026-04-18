@@ -8,6 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initClipboard();
   initDeleteConfirmations();
   initUrlSubmitShortcut();
+  initRefineInputs();
+  initGlobalRefineForm();
 });
 
 // Fill the URL input when an example link is clicked
@@ -42,10 +44,24 @@ function removeFlash(el) {
   setTimeout(() => el.remove(), 360);
 }
 
-// Progressively load preview fragments for [data-preview-url] targets
-// Called on discover results page; no-op on home/other pages.
+/**
+ * Progressively load preview fragments for auto-preview targets.
+ * Called on discover results page; no-op on home/other pages.
+ *
+ * Regression guard (manual inspection):
+ * 1. Open a results page with >2 candidates in at least one section.
+ * 2. Confirm the first 1–2 candidates in each section auto-preview
+ *    (preview table appears without clicking anything).
+ * 3. Confirm later candidates still show a "Preview" button.
+ * 4. Click the Preview button. The button disappears and the preview
+ *    renders in its sibling div — NOT inside a <button> wrapper.
+ * 5. In the rendered DOM, assert:
+ *    document.querySelector('button.preview-btn .preview-empty') === null
+ *    and
+ *    document.querySelector('button.preview-btn .preview-table') === null.
+ */
 function initPreviewLoaders() {
-  const targets = document.querySelectorAll('[data-preview-url]');
+  const targets = document.querySelectorAll('.preview-target[data-preview-url]');
   if (targets.length === 0) return;
 
   // Mark every queued target with a subtle state
@@ -168,6 +184,98 @@ function initUrlSubmitShortcut() {
   document.querySelector('.url-input')?.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.target.form.submit();
+    }
+  });
+}
+
+// Handle add/remove buttons for refine input fields
+function initRefineInputs() {
+  document.querySelectorAll('.refine-add').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const role = btn.dataset.role;
+      const wrap = btn.parentElement.querySelector('.refine-inputs');
+      if (!wrap) return;
+
+      const count = wrap.querySelectorAll('input').length;
+      if (count >= 3) return;  // hard cap
+
+      const row = document.createElement('div');
+      row.className = 'refine-input-row';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.name = `${role}_examples`;
+      input.placeholder = 'Additional example';
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm btn-link refine-remove';
+      remove.textContent = '−';
+      remove.addEventListener('click', () => {
+        row.remove();
+        // Show add button again if we're below cap
+        if (wrap.querySelectorAll('input').length < 3) {
+          btn.style.display = '';
+        }
+      });
+
+      row.append(input, remove);
+      wrap.appendChild(row);
+
+      // Hide the add button when at cap
+      if (wrap.querySelectorAll('input').length >= 3) {
+        btn.style.display = 'none';
+      }
+    });
+  });
+}
+
+// Handle global refine form submission
+function initGlobalRefineForm() {
+  const form = document.getElementById('global-refine-form');
+  if (!form) return;
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+
+    const formData = new FormData(form);
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Applying...';
+
+    try {
+      const response = await fetch('/preview-fragment-refined', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Refine failed');
+      }
+
+      const data = await response.json();
+
+      // Update each candidate's preview
+      for (const [type, previews] of Object.entries(data)) {
+        for (const [index, html] of Object.entries(previews)) {
+          const targetId = `preview-${type}-${index}`;
+          const target = document.getElementById(targetId);
+          if (target) {
+            target.innerHTML = html;
+          }
+        }
+      }
+
+      // Close the refine block
+      const details = form.closest('details');
+      if (details) details.removeAttribute('open');
+
+    } catch (err) {
+      console.error('Global refine error:', err);
+      alert('Failed to apply refine examples. Please try again.');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Apply to all candidates';
     }
   });
 }
