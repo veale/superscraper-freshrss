@@ -27,6 +27,10 @@ final class AutoFeedExtension extends Minz_Extension {
 
 		$this->registerHook('menu_other_entry', [$this, 'hookMenuEntry']);
 
+		// TEMPORARY DIAGNOSTIC — remove after translations confirmed working in production
+		$test = _t('ext.autofeed.menu_discover');
+		Minz_Log::notice("AutoFeed init: menu_discover translation = '{$test}'");
+
 		Minz_View::appendStyle($this->getFileUrl('autofeed.css', true));
 		Minz_View::appendScript($this->getFileUrl('autofeed.js', true));
 	}
@@ -49,6 +53,9 @@ final class AutoFeedExtension extends Minz_Extension {
 
 	#[\Override]
 	public function handleConfigureAction(): void {
+		parent::init();
+		$this->registerTranslates();
+
 		if (Minz_Request::isPost()) {
 			$sidecar_url = trim(Minz_Request::paramString('sidecar_url'));
 			$sidecar_url = $sidecar_url === '' ? self::DEFAULT_SIDECAR_URL : $sidecar_url;

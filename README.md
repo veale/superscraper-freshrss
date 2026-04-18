@@ -135,6 +135,29 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 **Extension:** copy `xExtension-AutoFeed/` into your FreshRSS `extensions/` directory and enable it. Requires FreshRSS 1.24.0+.
 
+### SELinux note (Fedora / RHEL / Asahi)
+
+On SELinux-enforcing hosts, bind-mounted directories need the `container_file_t`
+label or Docker containers can't read them. If FreshRSS logs show
+`file_get_contents(.../metadata.json): Permission denied` even though host-side
+`ls -la` shows the file as `-rw-r--r--`, that's SELinux blocking access.
+
+Fix permanently (one-time):
+
+```bash
+sudo semanage fcontext -a -t container_file_t "/path/to/your/docker-binds(/.*)?"
+sudo restorecon -Rv /path/to/your/docker-binds/
+```
+
+If `semanage` isn't installed:
+
+```bash
+sudo dnf install policycoreutils-python-utils
+```
+
+After the initial relabel, any future directories you create under that path will
+inherit the correct SELinux label automatically.
+
 ---
 
 ## How discovery works
@@ -667,18 +690,22 @@ For SFTP deployment (Tier 3.3), `asyncssh` is bundled in `requirements.txt` — 
 
 ## Compatibility
 
-The extension is tested against FreshRSS **1.24.0–1.28.1** (stable releases).
+Tested on FreshRSS **1.24.0 through 1.28.1** (current stable).
 
-It uses only the stable `Minz_Extension` API: string hook names,
-`getUserConfigurationValue()` for reads, `setUserConfiguration(array)` for
-writes, and no PHP namespaces. It does not depend on the typed-getter or
-enum-hook additions present in the FreshRSS `edge` branch.
+The extension uses only the stable `Minz_Extension` API:
+- String hook names (not `Minz_HookType::*` enum)
+- `getUserConfigurationValue()` for reads
+- `setUserConfiguration(array)` for writes (batched)
+- No PHP namespaces
 
-If you see PHP fatals like `Minz_HookType given` or `undefined method
-AutoFeedExtension::getUserConfigurationString()`, your FreshRSS is newer
-than expected (running `edge`) *and* someone has reverted the stable-API
-rewrites in this extension. Re-check `extension.php` and
-`configure.phtml` against this repo.
+These are all available since FreshRSS 1.24.0. The newer typed-getter and
+enum-hook APIs in FreshRSS's `edge` branch are intentionally not used —
+supporting stable FreshRSS is the priority.
+
+If you see PHP fatals mentioning `Minz_HookType given`, `undefined method
+getUserConfigurationString`, or `Class Extension\\AutoFeed\\Minz_ActionController
+not found`, your copy of the extension has been edited to use edge-only APIs.
+Revert to the repo's current code.
 
 You can verify compatibility on your specific FreshRSS by running:
 

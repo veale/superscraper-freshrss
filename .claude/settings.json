@@ -38,7 +38,9 @@
       "Bash(gh run *)",
       "Bash(git -C /Users/michael/Developer/autofeed-freshrss add sidecar/requirements.txt)",
       "Bash(git -C /Users/michael/Developer/autofeed-freshrss commit -m \"fix: loosen lxml pin to satisfy scrapling>=0.4.6 dependency\")",
-      "Bash(git -C /Users/michael/Developer/autofeed-freshrss push origin main)"
+      "Bash(git -C /Users/michael/Developer/autofeed-freshrss push origin main)",
+      "Bash(php -l xExtension-AutoFeed/i18n/en/ext.php)",
+      "Bash(php xExtension-AutoFeed/tests/i18n_check.php)"
     ]
   }
 }
