@@ -4,7 +4,6 @@ import sys
 import os
 import types
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Shim pydantic if not installed.
 try:

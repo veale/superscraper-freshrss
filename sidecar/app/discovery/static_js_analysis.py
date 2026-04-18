@@ -23,7 +23,9 @@ _API_URL_PATTERNS = [
 ]
 
 _INTERESTING_KEYWORDS = re.compile(
-    r'(?:posts|articles|events|entries|items|listings|news|feed|blog|stories|updates)',
+    r'(?:^|[/.])'
+    r'(?:posts|articles|events|entries|items|listings|news|feed|blog|stories|updates)'
+    r'(?:[/.?]|$)',
     re.IGNORECASE,
 )
 

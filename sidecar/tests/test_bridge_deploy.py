@@ -6,7 +6,6 @@ import os
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.bridge.deploy import deploy_bridge
 

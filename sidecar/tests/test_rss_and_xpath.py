@@ -1,7 +1,6 @@
 """Tests for RSS link parsing and XPath heuristic generation."""
 
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # These modules have pydantic imports, so we need a lightweight shim.
 # Provide a minimal BaseModel + Field if pydantic isn't installed.
@@ -138,6 +137,20 @@ def test_xpath_respects_min_repeats():
     html = f'<html><body>{items}</body></html>'
     candidates = generate_xpath_candidates(html)
     assert len(candidates) == 0
+
+
+# ── Static JS analysis: keyword boundary matching (D.5) ──────────────────
+
+def test_is_api_like_path_boundary_match():
+    """Keyword at a path boundary should be treated as API-like."""
+    from app.discovery.static_js_analysis import _is_api_like
+    assert _is_api_like("https://example.com/api/posts") is True
+
+
+def test_is_api_like_keyword_not_at_boundary():
+    """Keyword embedded mid-segment (not at a boundary) should not match."""
+    from app.discovery.static_js_analysis import _is_api_like
+    assert _is_api_like("https://example.com/news-from-2019/photo.jpg") is False
 
 
 # ── Runner ───────────────────────────────────────────────────────────────

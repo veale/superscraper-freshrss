@@ -64,12 +64,14 @@
 	<?php else: ?>
 		<div class="alert alert-success">
 			<strong><?= _t('ext.autofeed.bridge_deployed') ?></strong>
-			<?php if ($bridge_url): ?>
-				<?php
-					$subscribe_url = $bridge_url
-						. '/?action=display&bridge=' . urlencode($this->bridge_name)
-						. '&format=Atom';
-				?>
+		<?php if ($bridge_url): ?>
+			<?php
+				$bridge_slug = preg_replace('/Bridge$/', '', $this->bridge_name);
+				$subscribe_url = $bridge_url
+					. '/?action=display&bridge=' . urlencode($bridge_slug)
+					. '&format=Atom';
+				// RSS-Bridge strips the `Bridge` suffix internally, so we drop it here.
+			?>
 				&mdash;
 				<a href="<?= htmlspecialchars(Minz_Url::display([
 					'c' => 'subscription',

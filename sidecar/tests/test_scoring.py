@@ -4,7 +4,6 @@ import sys
 import os
 
 # Allow imports from the sidecar app package.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.discovery.scoring import score_feed_likeness, find_best_array_path
 

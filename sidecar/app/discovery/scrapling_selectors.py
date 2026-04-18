@@ -13,6 +13,7 @@ from typing import Any
 
 from scrapling import Selector
 
+from app.discovery.node_scoring import node_score
 from app.models.schemas import XPathCandidate
 
 # Tags we treat as potential feed-item containers.
@@ -21,21 +22,12 @@ _ITEM_TAGS = ["article", "li", "div", "section", "tr"]
 # Minimum repetitions before we consider a pattern.
 _MIN_REPEATS = 3
 
-# Tags/roles we want to score down (nav / footer / sidebar).
-_LOW_VALUE_ANCESTORS = {"nav", "footer", "aside", "header"}
-
-# Signals that a repeated element is a feed item.
-_FEED_ITEM_CLASSES = re.compile(
-    r"post|article|item|entry|card|story|result|listing|news|blog|feed",
-    re.IGNORECASE,
-)
-
 
 def _has_low_value_ancestor(element) -> bool:
-    """Return True if the element lives inside nav/footer/aside."""
+    """Return True if the element lives inside nav/footer/aside/header."""
     try:
         for ancestor in element.iterancestors():
-            if ancestor.tag in _LOW_VALUE_ANCESTORS:
+            if ancestor.tag in {"nav", "footer", "aside", "header"}:
                 return True
     except Exception:
         pass
@@ -43,22 +35,29 @@ def _has_low_value_ancestor(element) -> bool:
 
 
 def _item_confidence(element, count: int) -> float:
-    """Compute a confidence score for *element* as a feed-item container."""
-    score = min(0.3 + (count - _MIN_REPEATS) * 0.03, 0.70)
-
+    """Compute a 0.0–1.0 confidence for *element* as a feed-item container."""
     cls = element.attrib.get("class", "")
-    if _FEED_ITEM_CLASSES.search(cls):
-        score = min(score + 0.15, 0.90)
+    elem_id = element.attrib.get("id", "")
+    role = element.attrib.get("role", "")
 
-    # Bonus for semantic tags.
-    if element.tag == "article":
-        score = min(score + 0.10, 0.95)
+    raw_score, unlikely = node_score(element.tag, cls, elem_id, role)
+    if unlikely:
+        return 0.05  # keep the candidate visible for debugging but push it last
 
-    # Penalty for living in nav/footer/aside.
+    # Map the integer score into the [0, 1] band alongside the repetition count.
+    repetition_bonus = min((count - _MIN_REPEATS) * 0.03, 0.30)
+    # raw_score runs roughly -50…+50; normalise into roughly -0.5…+0.5.
+    normalised_signal = max(-0.5, min(0.5, raw_score / 100.0))
+
+    # Start at 0.5 as the neutral prior, adjust with both signals.
+    confidence = 0.5 + normalised_signal + repetition_bonus
+
+    # Ancestor check still matters: even a great-looking element loses value
+    # if it lives inside a nav/footer.
     if _has_low_value_ancestor(element):
-        score = max(score - 0.25, 0.05)
+        confidence -= 0.25
 
-    return round(score, 2)
+    return round(max(0.05, min(0.95, confidence)), 2)
 
 
 def _guess_sub_selectors(element) -> dict[str, str]:

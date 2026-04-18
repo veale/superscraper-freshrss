@@ -12,3 +12,7 @@ build/
 sidecar/data/
 generated-bridges/*.php
 rss-bridge-config/
+instructions.md
+instructions/
+.claude
+.pytest_cache

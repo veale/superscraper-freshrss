@@ -4,7 +4,8 @@ from __future__ import annotations
 from lxml import etree
 from lxml import html as lxml_html
 
-_DROP_TAGS = frozenset({"script", "style", "noscript"})
+from app.utils.tree_pruning import prune_tree
+
 _KEEP_ATTRS = frozenset({"class", "id", "role", "itemprop", "data-testid"})
 
 
@@ -17,17 +18,16 @@ def build_skeleton(raw_html: str, max_chars: int = 12_000) -> str:
     except Exception:
         return raw_html[:max_chars]
 
-    for comment in doc.xpath("//comment()"):
+    prune_tree(
+        doc,
+        drop_comments=True,
+        drop_precision=False,
+        drop_structural_noise=False,  # keep <header>/<footer>/<aside> for LLM context
+    )
+    for comment in doc.xpath('//comment()'):
         parent = comment.getparent()
         if parent is not None:
             parent.remove(comment)
-
-    etree.strip_elements(doc, *_DROP_TAGS, with_tail=False)
-
-    for svg in doc.xpath("//*[local-name()='svg']"):
-        parent = svg.getparent()
-        if parent is not None:
-            parent.remove(svg)
 
     _process_tree(doc)
 

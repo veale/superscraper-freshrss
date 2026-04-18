@@ -43,6 +43,7 @@ return [
 			// Sections
 			'section_rss' => 'RSS / Atom Feeds',
 			'section_api' => 'JSON API Endpoints',
+			'section_graphql' => 'GraphQL Operations',
 			'section_embedded' => 'Embedded JSON Data',
 			'section_xpath' => 'HTML Scraping (XPath)',
 
@@ -56,7 +57,8 @@ return [
 			'configure_mapping' => 'Configure field mapping & subscribe',
 			'category' => 'Category',
 			'subscribe' => 'Subscribe',
-			'embedded_note' => 'Embedded JSON requires HTML+XPath+JSON mode. Full support coming in Phase 2.',
+			'subscribe_scraped' => 'Subscribe (adaptive scrape)',
+			'embedded_note' => 'Embedded JSON is applied via HTML+XPath+JSON mode — FreshRSS will fetch the page and walk the configured JSON path on each refresh.',
 
 			// Metadata
 			'frameworks_detected' => 'Frameworks detected',
@@ -65,9 +67,10 @@ return [
 			// Feed creation
 			'feed_added' => 'Feed added: %s',
 			'feed_add_failed' => 'Failed to add feed. It may already exist.',
-			'feed_add_error' => 'Error adding feed',
-			'error_no_url' => 'Please enter a URL.',
-			'error_no_feed_url' => 'No feed URL specified.',
+				'feed_add_error' => 'Error adding feed',
+				'error_no_url' => 'Please enter a URL.',
+				'error_no_feed_url' => 'No feed URL specified.',
+				'error_csrf' => 'CSRF validation failed. Please try again.',
 
 			// LLM analysis
 			'llm_analyze_btn'    => 'Analyse with LLM',
@@ -96,6 +99,47 @@ return [
 			'auto_deploy_bridges'         => 'Automatically deploy generated bridges',
 			'auto_deploy_bridges_help'    => 'When enabled, the sidecar writes generated PHP files into the shared ./generated-bridges/ directory, making them immediately available to RSS-Bridge.',
 			'auto_deploy_bridges_warning' => 'Warning: this allows the sidecar to write PHP files to disk. Only enable if you trust the LLM output or review files before restarting RSS-Bridge.',
+
+			// External services (advanced)
+			'external_services_title'    => 'External Services (advanced)',
+			'external_services_help'     => 'Optional. Point AutoFeed at your own already-running Playwright, Browserless, Scrapling, or RSS-Bridge containers. Leave defaults for the bundled out-of-the-box experience.',
+				'fetch_backend'              => 'Browser fetch backend',
+				'fetch_backend_bundled'      => 'Bundled (in-process Playwright)',
+				'fetch_backend_playwright'   => 'External Playwright server (WebSocket)',
+				'fetch_backend_browserless'  => 'Browserless (CDP)',
+				'fetch_backend_scrapling'    => 'Scrapling-serve (HTTP)',
+				'services_auth_token'        => 'Bearer token (optional)',
+				'playwright_server_url'      => 'Playwright Server WebSocket URL',
+				'playwright_server_url_help' => 'WebSocket endpoint for a remote Playwright run-server (e.g. ws://playwright-server:3000/).',
+				'browserless_url'            => 'Browserless CDP endpoint',
+				'browserless_url_help'       => 'CDP WebSocket URL for your Browserless instance (append ?token=... if required).',
+				'scrapling_serve_url'        => 'Scrapling-serve HTTP URL',
+				'scrapling_serve_url_help'   => 'HTTP endpoint of scrapling-serve, used for stealth fetching and adaptive scraping.',
+				'services_auth_token_help'   => 'Optional Bearer token added to requests sent to external services above.',
+				'sidecar_auth_token'         => 'Sidecar inbound token (optional)',
+				'sidecar_auth_token_help'    => 'When present, mutating requests send this token as Authorization: Bearer <token> to the sidecar and the sidecar validates it.',
+	
+				// RSS-Bridge delivery modes (Tier 3)
+				'rss_bridge_deploy_mode'     => 'Bridge deployment mode',
+				'rss_bridge_deploy_mode_auto' => 'Auto (try local first, then remote)',
+				'rss_bridge_deploy_mode_local' => 'Local only (shared volume)',
+				'rss_bridge_deploy_mode_remote' => 'Remote only (HTTP API)',
+				'rss_bridge_deploy_mode_help' => 'Controls how generated RSS-Bridge PHP files are delivered. "Auto" tries the local shared volume first; "Remote only" forces HTTP API deployment.',
+				'auto_deploy_remote_warning' => 'Warning: You have a remote RSS-Bridge URL configured but auto-deploy is set to "Auto". The bridge will be written to the local sidecar volume, not sent to your remote RSS-Bridge. Use "Remote only" mode or copy the PHP manually.',
+	
+				// SFTP deployment (Tier 3.3)
+				'sftp_deploy_title'          => 'SFTP Deployment (optional)',
+				'sftp_deploy_help'           => 'Deploy bridges via SFTP to a remote RSS-Bridge host you can SSH into.',
+				'sftp_host'                  => 'SFTP Host',
+				'sftp_port'                  => 'SFTP Port',
+				'sftp_user'                  => 'SFTP Username',
+				'sftp_key_path'              => 'SSH Private Key Path',
+				'sftp_target_dir'            => 'Target Directory',
+				'sftp_test'                  => 'Test SFTP Connection',
+	
+				// Preview
+				'preview'                    => 'Preview',
+				'preview_no_items'           => 'No items found with the current selectors. Try adjusting the XPath or JSON paths.',
+			],
 		],
-	],
-];
+	];

@@ -10,13 +10,15 @@ from typing import Any
 import httpx
 
 from app.discovery.embedded_json import detect_embedded_json
-from app.discovery.network_intercept import intercept_network
 from app.discovery.rss_autodiscovery import discover_rss
 from app.discovery.scoring import score_feed_likeness
 from app.discovery.scrapling_selectors import generate_selectors_with_scrapling
 from app.discovery.selector_generation import generate_xpath_candidates
 from app.discovery.static_js_analysis import extract_api_urls
+from app.services.fetch import fetch_with_capture
 from app.utils.skeleton import build_skeleton
+from app.utils.tree_pruning import build_pruned_html
+from app.discovery.graphql_detect import detect_graphql_in_capture
 from app.models.schemas import (
     APIEndpoint,
     DiscoverRequest,
@@ -116,9 +118,19 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
             api_endpoints = []
             errors.append(f"Static JS analysis error: {exc}")
 
+        # ── Tree pruning pre-pass ──────────────────────────────────────────
+        # Only XPath/selector generators and the skeleton builder use pruned HTML.
+        # RSS autodiscovery, embedded-JSON, and static-JS-analysis need the raw
+        # HTML because they look inside <script> blocks which prune_tree removes.
+        try:
+            pruned_html = build_pruned_html(html)
+        except Exception as exc:
+            pruned_html = html
+            errors.append(f"Tree pruning error: {exc}")
+
         # ── Step 5 (Phase 1): Heuristic XPath candidate generation ─────────
         try:
-            xpath_candidates = generate_xpath_candidates(html)
+            xpath_candidates = generate_xpath_candidates(pruned_html)
         except Exception as exc:
             xpath_candidates = []
             errors.append(f"XPath generation error: {exc}")
@@ -128,8 +140,12 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
     #   • caller forces browser mode, OR
     #   • no RSS found AND (page is JS-rendered OR no API endpoints found), OR
     #   • anti-bot was detected (need stealth browser)
+    any_live_rss = any(feed.is_alive for feed in rss_feeds)
+    if req.force_skip_rss:
+        any_live_rss = False
+
     needs_browser = req.use_browser or (
-        not rss_feeds
+        not any_live_rss
         and (
             page_meta.has_javascript_content
             or page_meta.anti_bot_detected
@@ -138,11 +154,13 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
     )
 
     browser_html = ""
+    graphql_operations = []
     if needs_browser:
         # ── Step 4: Network interception ───────────────────────────────────
+        network_responses: list[dict] = []
         try:
-            browser_html, network_responses = await intercept_network(
-                url, timeout=min(req.timeout, 30)
+            browser_html, network_responses = await fetch_with_capture(
+                url, req.services, timeout=min(req.timeout, 30)
             )
             for resp_data in network_responses:
                 sc = score_feed_likeness(resp_data["body"])
@@ -176,11 +194,23 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
         except Exception as exc:
             errors.append(f"Network interception error: {exc}")
 
+        # ── GraphQL detection (inline) ──────────────────────────────────────
+        try:
+            graphql_operations = await detect_graphql_in_capture(network_responses)
+        except Exception as exc:
+            graphql_operations = []
+            errors.append(f"GraphQL detection error: {exc}")
+
         # ── Step 5 (Phase 2): Scrapling selector generation ────────────────
-        # Use browser-rendered HTML when available for full DOM analysis.
+        # Use browser-rendered HTML when available; prune before passing to
+        # selector generator so noise subtrees don't pollute candidate scoring.
         analysis_html = browser_html or html
         try:
-            scrapling_candidates = generate_selectors_with_scrapling(analysis_html)
+            pruned_analysis_html = build_pruned_html(analysis_html)
+        except Exception:
+            pruned_analysis_html = analysis_html
+        try:
+            scrapling_candidates = generate_selectors_with_scrapling(pruned_analysis_html)
             xpath_candidates = _merge_xpath_candidates(
                 scrapling_candidates, xpath_candidates
             )
@@ -197,8 +227,10 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
             api_endpoints=api_endpoints,
             embedded_json=embedded_json,
             xpath_candidates=xpath_candidates,
+            graphql_operations=graphql_operations,
             page_meta=page_meta,
             html_skeleton=html_skeleton,
+            phase2_used=needs_browser,
         ),
         errors=errors,
     )

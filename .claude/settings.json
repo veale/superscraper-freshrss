@@ -6,7 +6,32 @@
       "Bash(pip --version)",
       "Bash(/opt/homebrew/bin/python3.10 -c \"import sys; print\\(sys.version\\)\")",
       "Bash(/opt/homebrew/bin/pip3 --version)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Read(//opt/homebrew/**)",
+      "Bash(python3 -c \"import scrapling; print\\(scrapling.__file__\\)\")",
+      "WebFetch(domain:scrapling.readthedocs.io)",
+      "WebSearch",
+      "Bash(python -m pytest tests/test_scoring.py tests/test_embedded_json.py tests/test_rss_and_xpath.py tests/test_scrapling_selectors.py tests/test_skeleton.py tests/test_llm_client.py tests/test_analyzer.py tests/test_prompts.py tests/test_bridge_deploy.py tests/test_bridge_flow.py tests/test_services_config.py tests/test_fetch_dispatcher.py tests/test_cascade_phase1.py -v --tb=short)",
+      "Bash(python -m pytest tests/test_cascade_phase1.py --tb=long)",
+      "Bash(.venv/bin/python -m pytest tests/test_scoring.py tests/test_embedded_json.py tests/test_rss_and_xpath.py tests/test_scrapling_selectors.py tests/test_skeleton.py tests/test_llm_client.py tests/test_analyzer.py tests/test_prompts.py tests/test_bridge_deploy.py tests/test_bridge_flow.py tests/test_services_config.py tests/test_fetch_dispatcher.py tests/test_cascade_phase1.py -v --tb=short)",
+      "Bash(.venv/bin/python -c \"import scrapling; print\\(scrapling.__version__\\)\")",
+      "Bash(.venv/bin/python -c \"from scrapling import Selector; import inspect; print\\(inspect.signature\\(Selector.__init__\\)\\)\")",
+      "Bash(.venv/bin/pip show *)",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/python -m pytest tests/test_scrape_dot_get.py tests/test_scrape_endpoint.py tests/test_scrape_adaptive.py tests/test_scrape_config.py -v --tb=short)",
+      "Bash(.venv/bin/python -m pytest tests/test_scoring.py tests/test_embedded_json.py tests/test_rss_and_xpath.py tests/test_scrapling_selectors.py tests/test_skeleton.py tests/test_llm_client.py tests/test_analyzer.py tests/test_prompts.py tests/test_bridge_deploy.py tests/test_bridge_flow.py tests/test_services_config.py tests/test_fetch_dispatcher.py tests/test_cascade_phase1.py tests/test_scrape_dot_get.py tests/test_scrape_endpoint.py tests/test_scrape_adaptive.py tests/test_scrape_config.py -v --tb=short)",
+      "Bash(python -m pytest tests/test_scoring.py tests/test_embedded_json.py tests/test_rss_and_xpath.py tests/test_scrapling_selectors.py tests/test_skeleton.py tests/test_llm_client.py tests/test_analyzer.py tests/test_prompts.py tests/test_bridge_deploy.py tests/test_bridge_flow.py tests/test_services_config.py tests/test_fetch_dispatcher.py tests/test_scrape_dot_get.py tests/test_scrape_endpoint.py tests/test_scrape_adaptive.py tests/test_scrape_config.py tests/test_graphql_detect.py tests/test_graphql_probe_endpoint.py tests/test_cascade_phase1.py -v)",
+      "Bash(python -m pytest tests/test_scoring.py tests/test_embedded_json.py tests/test_rss_and_xpath.py tests/test_skeleton.py tests/test_bridge_deploy.py tests/test_prompts.py tests/test_services_config.py tests/test_graphql_detect.py -v)",
+      "Bash(pip show *)",
+      "Bash(pip3 show *)",
+      "Bash(.venv/bin/python -m pytest tests/test_rss_deadfeed.py -v)",
+      "Bash(.venv/bin/python -m pytest tests/ -q)",
+      "Bash(.venv/bin/python -m pytest tests/ -q --timeout=120)",
+      "Bash(gh repo *)",
+      "Bash(mv /Users/michael/Developer/superscraper-freshrss /Users/michael/Developer/autofeed-freshrss)",
+      "Bash(git -C /Users/michael/Developer/autofeed-freshrss remote set-url origin https://github.com/veale/autofeed-freshrss.git)",
+      "Bash(git -C /Users/michael/Developer/autofeed-freshrss remote -v)"
     ]
   }
 }

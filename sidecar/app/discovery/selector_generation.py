@@ -12,6 +12,7 @@ from collections import Counter
 from html.parser import HTMLParser
 from typing import Optional
 
+from app.discovery.node_scoring import node_score
 from app.models.schemas import XPathCandidate
 
 # Tags that typically wrap individual feed items.
@@ -109,7 +110,18 @@ def generate_xpath_candidates(html: str) -> list[XPathCandidate]:
         title_sel = _guess_title_selector(html, item_xpath, child_tag, child_attrs)
         link_sel = _guess_link_selector()
 
-        confidence = min(0.3 + (count - _MIN_REPEATS) * 0.03, 0.85)
+        raw_score, unlikely = node_score(
+            child_tag,
+            child_attrs.get("class", ""),
+            child_attrs.get("id", ""),
+            child_attrs.get("role", ""),
+        )
+        if unlikely:
+            confidence = 0.05
+        else:
+            base = min(0.3 + (count - _MIN_REPEATS) * 0.03, 0.85)
+            normalised = max(-0.5, min(0.5, raw_score / 100.0))
+            confidence = round(max(0.05, min(0.95, base + normalised * 0.5)), 2)
 
         candidates.append(XPathCandidate(
             item_selector=item_xpath,
@@ -130,8 +142,42 @@ def generate_xpath_candidates(html: str) -> list[XPathCandidate]:
             seen.add(c.item_selector)
             deduped.append(c)
 
+    # ── Tier 1.3.a: union-selector pass ──────────────────────────────────────
+    # If two candidates share the same tag and differ only by class predicate,
+    # emit a third candidate whose selector is the XPath union.
+    import re as _re
+    _PAT = _re.compile(r"^//(\w+)\[contains\(@class, '([^']+)'\)\]$")
+    union_candidates: list[XPathCandidate] = []
+    for i in range(len(deduped)):
+        for j in range(i + 1, len(deduped)):
+            a, b = deduped[i], deduped[j]
+            ma = _PAT.match(a.item_selector)
+            mb = _PAT.match(b.item_selector)
+            if not (ma and mb):
+                continue
+            if ma.group(1) != mb.group(1):
+                continue
+            if ma.group(2) == mb.group(2):
+                continue
+            combined = a.item_count + b.item_count
+            if not (5 <= combined <= 50):
+                continue
+            best = a if a.confidence >= b.confidence else b
+            union_candidates.append(XPathCandidate(
+                item_selector=f"{a.item_selector} | {b.item_selector}",
+                title_selector=best.title_selector,
+                link_selector=best.link_selector,
+                content_selector=best.content_selector,
+                timestamp_selector=best.timestamp_selector,
+                thumbnail_selector=best.thumbnail_selector,
+                confidence=round(max(0.05, best.confidence - 0.05), 2),
+                item_count=combined,
+                item_selector_union=True,
+            ))
+    deduped.extend(union_candidates)
+
     deduped.sort(key=lambda c: c.confidence, reverse=True)
-    return deduped[:5]  # Top 5
+    return deduped[:7]  # top 7 — leaves room for union pass output
 
 
 def _parse_sig(sig: str) -> dict[str, str]:

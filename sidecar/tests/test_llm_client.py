@@ -9,7 +9,6 @@ import httpx
 import pytest
 import respx
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.llm import LLMAuth, LLMMalformed, LLMTimeout
 from app.llm.client import LLMClient

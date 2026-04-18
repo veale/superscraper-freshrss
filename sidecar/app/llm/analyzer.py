@@ -108,18 +108,21 @@ async def generate_bridge(req: BridgeGenerateRequest) -> BridgeGenerateResponse:
             errors=["LLM did not return both bridge_name and php_code fields"],
         )
 
-    warnings = _sanity_check_php(bridge_name, php_code)
+    warnings, soft_warnings = _sanity_check_php(bridge_name, php_code)
 
     return BridgeGenerateResponse(
         bridge_name=bridge_name,
         filename=f"{bridge_name}.php",
         php_code=php_code,
         sanity_warnings=warnings,
+        soft_warnings=soft_warnings,
     )
 
 
-def _sanity_check_php(bridge_name: str, code: str) -> list[str]:
+def _sanity_check_php(bridge_name: str, code: str) -> tuple[list[str], list[str]]:
+    """Check PHP code for common issues. Returns (warnings, soft_warnings)."""
     warnings: list[str] = []
+    soft_warnings: list[str] = []
 
     if not code.lstrip().startswith("<?php"):
         warnings.append("PHP code does not start with <?php")
@@ -130,14 +133,51 @@ def _sanity_check_php(bridge_name: str, code: str) -> list[str]:
     if "extends BridgeAbstract" not in code:
         warnings.append("Class does not extend BridgeAbstract")
 
-    if f"class {bridge_name}Bridge" not in code:
-        warnings.append(f"Expected class '{bridge_name}Bridge' not found in code")
+    if f"class {bridge_name}" not in code:
+        warnings.append(f"Expected class '{bridge_name}' not found in code")
 
     if "collectData" not in code:
         warnings.append("Missing collectData() method")
 
-    for danger in ("shell_exec", "exec(", "system(", "passthru(", "eval("):
-        if danger in code:
-            warnings.append(f"Potentially dangerous call: {danger}")
+    for const_name in ("const NAME", "const URI", "const DESCRIPTION"):
+        if const_name not in code:
+            warnings.append(f"Missing {const_name} constant")
 
-    return warnings
+    if "const MAINTAINER = 'AutoFeed-LLM'" not in code:
+        warnings.append("const MAINTAINER should equal 'AutoFeed-LLM'")
+
+    if "const PARAMETERS" not in code:
+        warnings.append("const PARAMETERS is required even if empty")
+
+    # Actually dangerous calls that should block/warn strongly
+    dangerous_patterns = (
+        "shell_exec",
+        "system(",
+        "passthru(",
+        "popen(",
+        "proc_open(",
+        "eval(",
+        "assert(",
+        "create_function(",
+        "pcntl_exec(",
+    )
+    for danger in dangerous_patterns:
+        if danger in code:
+            warnings.append(f"Dangerous call: {danger}")
+
+    # Soft warnings - these are normal in RSS-Bridge but should be reviewed
+    soft_patterns = ("file_get_contents", "fopen(", "curl_", "base64_decode")
+    for pattern in soft_patterns:
+        if pattern in code:
+            # For file_get_contents, only warn if it looks like a local file read
+            if pattern == "file_get_contents":
+                # Check if there's a path starting with / or php://
+                import re as _re
+                if _re.search(r'file_get_contents\s*\(\s*["\'][\/php://]', code):
+                    soft_warnings.append(f"file_get_contents with local path - review if expected")
+                else:
+                    soft_warnings.append(f"file_get_contents present - review if expected")
+            else:
+                soft_warnings.append(f"{pattern} present - review if you didn't expect it")
+
+    return warnings, soft_warnings

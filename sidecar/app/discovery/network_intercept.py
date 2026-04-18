@@ -13,7 +13,14 @@ from typing import Any
 
 from playwright.async_api import async_playwright
 
-_semaphore = asyncio.Semaphore(2)  # Max 2 concurrent browser contexts.
+_semaphore: asyncio.Semaphore | None = None  # Lazily initialised to avoid event-loop binding at import time.
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _semaphore
+    if _semaphore is None:
+        _semaphore = asyncio.Semaphore(2)
+    return _semaphore
 
 # ── Filtering ─────────────────────────────────────────────────────────────────
 
@@ -44,6 +51,98 @@ def _is_excluded(url: str) -> bool:
     return bool(_EXCLUDE_PATTERNS.search(url))
 
 
+# ── Shared capture helper ─────────────────────────────────────────────────────
+
+
+async def _run_capture(
+    browser,
+    url: str,
+    timeout: int,
+    extra_wait: float,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Run the network-capture workflow against an already-connected *browser*.
+
+    Shared between the bundled (launch) path and the remote (connect / CDP)
+    paths so capture behaviour is identical.
+    """
+    captured: list[dict[str, Any]] = []
+
+    context = await browser.new_context(
+        viewport={"width": 1920, "height": 1080},
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        java_script_enabled=True,
+        ignore_https_errors=True,
+    )
+    page = await context.new_page()
+
+    async def _abort_binary(route):
+        if _RESOURCE_BLOCK_RE.search(route.request.url):
+            await route.abort()
+        else:
+            await route.continue_()
+
+    await page.route("**/*", _abort_binary)
+
+    async def _on_response(response) -> None:
+        try:
+            ct = response.headers.get("content-type", "")
+            resp_url = response.url
+
+            if "json" not in ct.lower():
+                return
+            if _is_excluded(resp_url):
+                return
+
+            try:
+                body = await response.json()
+            except Exception:
+                return
+
+            post_data: str | None = None
+            try:
+                post_data = response.request.post_data
+            except Exception:
+                pass
+
+            captured.append(
+                {
+                    "url": resp_url,
+                    "method": response.request.method,
+                    "status": response.status,
+                    "content_type": ct.split(";")[0].strip(),
+                    "body": body,
+                    "request_post_data": post_data,
+                }
+            )
+        except Exception:
+            pass
+
+    page.on("response", _on_response)
+
+    try:
+        await page.goto(
+            url,
+            wait_until="networkidle",
+            timeout=timeout * 1000,
+        )
+    except Exception:
+        pass  # Timeout/nav error — still collect what we have.
+
+    await asyncio.sleep(extra_wait)
+
+    try:
+        html = await page.content()
+    except Exception:
+        html = ""
+
+    await context.close()
+    return html, captured
+
+
 # ── Main public function ───────────────────────────────────────────────────────
 
 
@@ -58,9 +157,7 @@ async def intercept_network(
     Each captured response dict has keys:
       url, method, status, content_type, body, request_post_data
     """
-    captured: list[dict[str, Any]] = []
-
-    async with _semaphore:
+    async with _get_semaphore():
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(
                 headless=True,
@@ -71,87 +168,7 @@ async def intercept_network(
                     "--disable-gpu",
                 ],
             )
-            context = await browser.new_context(
-                viewport={"width": 1920, "height": 1080},
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-                java_script_enabled=True,
-                ignore_https_errors=True,
-            )
-            page = await context.new_page()
-
-            # Block binary resources to speed up loading.
-            async def _abort_binary(route):
-                if _RESOURCE_BLOCK_RE.search(route.request.url):
-                    await route.abort()
-                else:
-                    await route.continue_()
-
-            await page.route("**/*", _abort_binary)
-
-            # Register response listener BEFORE navigation.
-            async def _on_response(response) -> None:
-                try:
-                    ct = response.headers.get("content-type", "")
-                    resp_url = response.url
-
-                    if "json" not in ct.lower():
-                        return
-                    if _is_excluded(resp_url):
-                        return
-
-                    try:
-                        body = await response.json()
-                    except Exception:
-                        return
-
-                    post_data: str | None = None
-                    try:
-                        post_data = response.request.post_data
-                    except Exception:
-                        pass
-
-                    captured.append(
-                        {
-                            "url": resp_url,
-                            "method": response.request.method,
-                            "status": response.status,
-                            "content_type": ct.split(";")[0].strip(),
-                            "body": body,
-                            "request_post_data": post_data,
-                        }
-                    )
-                except Exception:
-                    pass
-
-            page.on("response", _on_response)
-
             try:
-                await page.goto(
-                    url,
-                    wait_until="networkidle",
-                    timeout=timeout * 1000,
-                )
-            except Exception:
-                pass  # Timeout/nav error — still collect what we have.
-
-            # Extra wait for lazy-loaded XHR that fires after initial render.
-            await asyncio.sleep(extra_wait)
-
-            try:
-                html = await page.content()
-            except Exception:
-                html = ""
-
-            await context.close()
-            await browser.close()
-
-    return html, captured
-
-
-async def close_browser() -> None:
-    """No-op — kept for API compatibility. Browsers are closed per-call."""
-    pass
+                return await _run_capture(browser, url, timeout, extra_wait)
+            finally:
+                await browser.close()

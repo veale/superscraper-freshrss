@@ -11,7 +11,6 @@ import pytest
 import respx
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.main import app
 
@@ -33,7 +32,9 @@ class ExampleSiteBridge extends BridgeAbstract {
     const NAME = 'ExampleSite Bridge';
     const URI = 'https://example.com';
     const DESCRIPTION = 'Scrapes example.com';
+    const MAINTAINER = 'AutoFeed-LLM';
     const CACHE_TIMEOUT = 3600;
+    const PARAMETERS = [];
 
     public function collectData() {
         $html = getSimpleHTMLDOM($this->getURI());
@@ -89,6 +90,7 @@ async def test_bridge_generate_returns_php(respx_mock):
     assert data["filename"] == "ExampleSiteBridge.php"
     assert "<?php" in data["php_code"]
     assert data["errors"] == []
+    assert data["sanity_warnings"] == []
 
 
 @pytest.mark.asyncio

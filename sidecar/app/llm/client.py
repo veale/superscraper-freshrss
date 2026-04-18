@@ -89,19 +89,62 @@ class LLMClient:
 
 
 def _parse_json(text: str) -> dict:
-    """Parse JSON from LLM output, with a regex fallback for prose-wrapped responses."""
+    """Parse JSON from LLM output, with a brace-balance fallback for prose-wrapped responses."""
     text = text.strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    # Fallback: extract first {...} block (some providers add prose around the JSON)
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    if m:
+    # Fallback: use brace-balance walker to find the first balanced {...} block
+    # This handles cases like {"thinking": "..."} {"bridge_name": "..."} correctly
+    balanced = _find_balanced_braces(text)
+    if balanced:
         try:
-            return json.loads(m.group(0))
+            return json.loads(balanced)
         except json.JSONDecodeError:
             pass
 
     raise LLMMalformed(f"Could not parse JSON from LLM response: {text[:300]}")
+
+
+def _find_balanced_braces(text: str) -> str | None:
+    """Find the first balanced JSON object in text using brace counting.
+    
+    Scans for the first '{', then counts braces (skipping those inside strings)
+    until the object is balanced. Returns the balanced substring or None.
+    """
+    start = text.find('{')
+    if start == -1:
+        return None
+    
+    depth = 0
+    in_string = False
+    escape_next = False
+    
+    for i in range(start, len(text)):
+        char = text[i]
+        
+        if escape_next:
+            escape_next = False
+            continue
+        
+        if char == '\\':
+            escape_next = True
+            continue
+        
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+        
+        if in_string:
+            continue
+        
+        if char == '{':
+            depth += 1
+        elif char == '}':
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    
+    return None

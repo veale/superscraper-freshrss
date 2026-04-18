@@ -9,9 +9,8 @@ import httpx
 import pytest
 import respx
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.llm.analyzer import recommend_strategy
+from app.llm.analyzer import recommend_strategy, _sanity_check_php
 from app.models.schemas import (
     AnalyzeRequest,
     APIEndpoint,
@@ -26,7 +25,7 @@ from app.models.schemas import (
 _ENDPOINT = "http://llm.internal"
 _COMPLETIONS_URL = f"{_ENDPOINT}/chat/completions"
 
-_LLM_CFG = LLMConfig(endpoint=_ENDPOINT, api_key="sk-x", model="gpt-4o-mini")
+_LLM_CFG = LLMConfig(endpoint=_ENDPOINT, api_key="sk-x", model="gpt-4o-mini", timeout=30)
 
 
 def _llm_resp(content: dict, tokens: int = 50) -> httpx.Response:
@@ -203,3 +202,43 @@ async def test_url_preserved_in_response(respx_mock):
     )
     resp = await recommend_strategy(req)
     assert resp.url == "https://specific-site.example.org/blog"
+
+
+def test_sanity_check_missing_constants_warns():
+    code = """<?php
+    class ExampleBridgeBridge extends BridgeAbstract {
+        public function collectData() {}
+    }
+    """
+    warnings, _soft = _sanity_check_php("ExampleBridgeBridge", code)
+    assert "Missing const NAME constant" in warnings
+    assert "Missing const URI constant" in warnings
+    assert "Missing const DESCRIPTION constant" in warnings
+    assert "const MAINTAINER should equal 'AutoFeed-LLM'" in warnings
+    assert "const PARAMETERS is required even if empty" in warnings
+
+
+def test_sanity_check_detects_dangerous_calls():
+    code = """<?php
+    class SafeBridge extends BridgeAbstract {
+        const NAME = 'Safe';
+        const URI = 'https://example.com';
+        const DESCRIPTION = 'desc';
+        const MAINTAINER = 'AutoFeed-LLM';
+        const PARAMETERS = [];
+
+        public function collectData() {
+            shell_exec('rm -rf /tmp');
+            file_get_contents('/secret');
+            fopen('/etc/passwd', 'r');
+            curl_init('https://example.com');
+            base64_decode('c2VjcmV0');
+        }
+    }
+    """
+    warnings, soft_warnings = _sanity_check_php("SafeBridge", code)
+    assert any("shell_exec" in w for w in warnings), warnings
+    assert any("file_get_contents" in w for w in soft_warnings), soft_warnings
+    assert any("fopen(" in w for w in soft_warnings), soft_warnings
+    assert any("curl_" in w for w in soft_warnings), soft_warnings
+    assert any("base64_decode" in w for w in soft_warnings), soft_warnings

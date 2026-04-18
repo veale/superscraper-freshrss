@@ -21,11 +21,24 @@
 		</div>
 
 		<div class="form-group" style="margin-top: 0.75em;">
-			<label>
-				<input type="checkbox" name="use_browser" value="1" />
-				<?= _t('ext.autofeed.advanced_discovery_label') ?>
-			</label>
-			<p class="help"><?= _t('ext.autofeed.advanced_discovery_help') ?></p>
+			<details class="autofeed-advanced-details">
+				<summary><?= _t('ext.autofeed.advanced_details_title') ?></summary>
+				<label>
+					<input type="checkbox" name="use_browser" value="1" />
+					<?= _t('ext.autofeed.advanced_discovery_label') ?>
+				</label>
+				<p class="help"><?= _t('ext.autofeed.advanced_discovery_help') ?></p>
+				<label>
+					<input type="checkbox" name="force_skip_rss" value="1" />
+					<?= _t('ext.autofeed.force_skip_rss_label') ?>
+				</label>
+				<p class="help"><?= _t('ext.autofeed.force_skip_rss_help') ?></p>
+				<label>
+					<?= _t('ext.autofeed.override_xpath_item_label') ?>:
+					<input type="text" name="override_xpath_item" value="<?= htmlspecialchars($this->override_xpath_item ?? '') ?>" size="40" />
+				</label>
+				<p class="help"><?= _t('ext.autofeed.override_xpath_item_help') ?></p>
+			</details>
 		</div>
 	</form>
 </div>

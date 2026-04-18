@@ -16,16 +16,23 @@
 		$errors = $d['errors'] ?? [];
 		$meta = $results['page_meta'] ?? [];
 		$rss_feeds = $results['rss_feeds'] ?? [];
+		$live_rss_feeds = array_filter($rss_feeds, fn($f) => ($f['is_alive'] ?? true));
+		$dead_rss_feeds = array_filter($rss_feeds, fn($f) => !(
+			$f['is_alive'] ?? true));
 		$api_endpoints = $results['api_endpoints'] ?? [];
+		$graphql_operations = $results['graphql_operations'] ?? [];
 		$embedded_json = $results['embedded_json'] ?? [];
 		$xpath_candidates = $results['xpath_candidates'] ?? [];
-		$has_results = count($rss_feeds) + count($api_endpoints) + count($embedded_json) + count($xpath_candidates) > 0;
-
+		$phase2_used = !!($results['phase2_used'] ?? false);
+		$override_xpath_item = trim($this->override_xpath_item ?? '');
+		$show_xpath_candidates = !$override_xpath_item && !empty($xpath_candidates);
+		$has_results = count($rss_feeds) + count($api_endpoints) + count($embedded_json) + count($xpath_candidates) + count($graphql_operations) > 0;
+	
 		$categories = FreshRSS_Context::categories();
 
 		$ext = Minz_ExtensionManager::findExtension('AutoFeed');
 		$has_llm = $ext !== null && $ext->hasLlmConfigured();
-		$discovery_json = base64_encode((string) json_encode($this->discovery ?: []));
+		$discover_id = htmlspecialchars($this->discovery['discover_id'] ?? '');
 	?>
 
 	<p>
@@ -60,7 +67,7 @@
 	<div class="autofeed-action-row">
 		<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'llmAnalyze']) ?>">
 			<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
-			<input type="hidden" name="discovery_json" value="<?= htmlspecialchars($discovery_json) ?>" />
+			<input type="hidden" name="discover_id" value="<?= $discover_id ?>" />
 			<button type="submit" class="btn btn-secondary"
 				data-autofeed-spinner
 				data-spinner-text="<?= _t('ext.autofeed.llm_analyzing') ?>">
@@ -69,7 +76,7 @@
 		</form>
 		<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'bridgeGenerate']) ?>">
 			<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
-			<input type="hidden" name="discovery_json" value="<?= htmlspecialchars($discovery_json) ?>" />
+			<input type="hidden" name="discover_id" value="<?= $discover_id ?>" />
 			<button type="submit" class="btn btn-secondary"
 				data-autofeed-spinner
 				data-spinner-text="<?= _t('ext.autofeed.bridge_generating') ?>">
@@ -189,9 +196,9 @@
 
 			<?php elseif ($rec_strategy === 'rss_bridge'): ?>
 				<p><?= _t('ext.autofeed.bridge_generate_btn') ?></p>
-				<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'bridgeGenerate']) ?>">
-					<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
-					<input type="hidden" name="discovery_json" value="<?= htmlspecialchars($discovery_json) ?>" />
+		<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'bridgeGenerate']) ?>">
+			<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
+			<input type="hidden" name="discover_id" value="<?= $discover_id ?>" />
 					<button type="submit" class="btn btn-primary"
 						data-autofeed-spinner
 						data-spinner-text="<?= _t('ext.autofeed.bridge_generating') ?>">
@@ -207,9 +214,9 @@
 		<div class="alert alert-warning"><?= _t('ext.autofeed.no_results') ?></div>
 		<?php if ($has_llm): ?>
 			<p><?= _t('ext.autofeed.bridge_generate_btn') ?>:</p>
-			<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'bridgeGenerate']) ?>">
-				<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
-				<input type="hidden" name="discovery_json" value="<?= htmlspecialchars($discovery_json) ?>" />
+		<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'bridgeGenerate']) ?>">
+			<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
+			<input type="hidden" name="discover_id" value="<?= $discover_id ?>" />
 				<button type="submit" class="btn btn-secondary"
 					data-autofeed-spinner
 					data-spinner-text="<?= _t('ext.autofeed.bridge_generating') ?>">
@@ -307,6 +314,38 @@
 	<?php endif; ?>
 
 
+	<!-- ═══════════════════ GraphQL Operations ═══════════════════ -->
+	<?php if (!empty($graphql_operations)): ?>
+	<section class="autofeed-section">
+		<h2><?= _t('ext.autofeed.section_graphql') ?></h2>
+		<?php foreach ($graphql_operations as $i => $op): ?>
+		<div class="autofeed-card">
+			<div class="autofeed-card-header">
+				<span class="autofeed-badge autofeed-badge-graphql">GraphQL</span>
+				<strong><?= htmlspecialchars($op['operation_name'] ?: '(anonymous)') ?></strong>
+				<span class="autofeed-score"><?= _t('ext.autofeed.score') ?>: <?= number_format(($op['feed_score'] ?? 0) * 100) ?>%</span>
+			</div>
+			<code class="autofeed-url"><?= htmlspecialchars($op['endpoint'] ?? '') ?></code>
+			<p class="help">
+				<?= htmlspecialchars(ucfirst($op['operation_type'] ?? 'query')) ?>
+				&middot; <?= $op['item_count'] ?? 0 ?> <?= _t('ext.autofeed.items') ?>
+				&middot; via <?= htmlspecialchars($op['detected_via'] ?? '') ?>
+			</p>
+			<?php if (!empty($op['sample_keys'])): ?>
+				<p class="help"><?= _t('ext.autofeed.fields') ?>: <?= htmlspecialchars(implode(', ', $op['sample_keys'])) ?></p>
+			<?php endif; ?>
+			<?php if (!empty($op['query'])): ?>
+			<details>
+				<summary>View query</summary>
+				<pre style="overflow:auto;max-height:200px"><?= htmlspecialchars($op['query']) ?></pre>
+			</details>
+			<?php endif; ?>
+		</div>
+		<?php endforeach; ?>
+	</section>
+	<?php endif; ?>
+
+
 	<!-- ═══════════════════ Embedded JSON ═══════════════════ -->
 	<?php if (!empty($embedded_json)): ?>
 	<section class="autofeed-section">
@@ -337,12 +376,24 @@
 	<section class="autofeed-section">
 		<h2><?= _t('ext.autofeed.section_xpath') ?></h2>
 		<?php foreach ($xpath_candidates as $i => $xp): ?>
-		<div class="autofeed-card">
+		<div class="autofeed-card" data-candidate-index="<?= $i ?>">
 			<div class="autofeed-card-header">
 				<span class="autofeed-badge autofeed-badge-xpath">XPath</span>
 				<span class="autofeed-score"><?= _t('ext.autofeed.confidence') ?>: <?= number_format(($xp['confidence'] ?? 0) * 100) ?>%</span>
 				<span>(<?= $xp['item_count'] ?? 0 ?> <?= _t('ext.autofeed.items') ?>)</span>
+				<button type="button" class="btn btn-secondary btn-small autofeed-preview-btn"
+					data-url="<?= htmlspecialchars($this->target_url) ?>"
+					data-strategy="xpath"
+					data-xpath-item="<?= htmlspecialchars($xp['item_selector'] ?? '') ?>"
+					data-xpath-title="<?= htmlspecialchars($xp['title_selector'] ?? '') ?>"
+					data-xpath-content="<?= htmlspecialchars($xp['content_selector'] ?? '') ?>"
+					data-xpath-uri="<?= htmlspecialchars($xp['link_selector'] ?? '') ?>"
+					data-xpath-timestamp="<?= htmlspecialchars($xp['timestamp_selector'] ?? '') ?>"
+					data-xpath-thumbnail="<?= htmlspecialchars($xp['thumbnail_selector'] ?? '') ?>">
+					<?= _t('ext.autofeed.preview') ?>
+				</button>
 			</div>
+			<div class="autofeed-preview-container" id="preview-<?= $i ?>"></div>
 			<details>
 				<summary><code><?= htmlspecialchars($xp['item_selector'] ?? '') ?></code></summary>
 				<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'apply']) ?>" class="autofeed-apply-form autofeed-mapping-form">
@@ -366,6 +417,26 @@
 						</select>
 					</label>
 					<button type="submit" class="btn btn-primary"><?= _t('ext.autofeed.subscribe') ?></button>
+				</form>
+				<form method="post" action="<?= Minz_Url::display(['c' => 'AutoFeed', 'a' => 'applyScraped']) ?>" class="autofeed-apply-form autofeed-mapping-form">
+					<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
+					<input type="hidden" name="strategy" value="xpath" />
+					<input type="hidden" name="feed_url" value="<?= htmlspecialchars($this->target_url) ?>" />
+					<input type="hidden" name="feed_name" value="<?= htmlspecialchars($meta['page_title'] ?? '') ?>" />
+					<input type="hidden" name="xPathItem" value="<?= htmlspecialchars($xp['item_selector'] ?? '') ?>" />
+					<input type="hidden" name="xPathItemTitle" value="<?= htmlspecialchars($xp['title_selector'] ?? '') ?>" />
+					<input type="hidden" name="xPathItemContent" value="<?= htmlspecialchars($xp['content_selector'] ?? '') ?>" />
+					<input type="hidden" name="xPathItemUri" value="<?= htmlspecialchars($xp['link_selector'] ?? '') ?>" />
+					<input type="hidden" name="xPathItemTimestamp" value="<?= htmlspecialchars($xp['timestamp_selector'] ?? '') ?>" />
+					<input type="hidden" name="xPathItemThumbnail" value="<?= htmlspecialchars($xp['thumbnail_selector'] ?? '') ?>" />
+					<label><?= _t('ext.autofeed.category') ?>:
+						<select name="category">
+							<?php foreach ($categories as $cat): ?>
+							<option value="<?= $cat->id() ?>"><?= htmlspecialchars($cat->name()) ?></option>
+							<?php endforeach; ?>
+						</select>
+					</label>
+					<button type="submit" class="btn btn-secondary"><?= _t('ext.autofeed.subscribe_scraped') ?></button>
 				</form>
 			</details>
 		</div>

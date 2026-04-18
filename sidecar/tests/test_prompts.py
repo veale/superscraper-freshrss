@@ -6,7 +6,6 @@ import os
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.llm.prompts import render_bridge_prompt, render_strategy_prompt
 from app.models.schemas import (
@@ -15,13 +14,14 @@ from app.models.schemas import (
     BridgeGenerateRequest,
     DiscoveryResults,
     EmbeddedJSON,
+    GraphQLOperation,
     LLMConfig,
     PageMeta,
     RSSFeed,
     XPathCandidate,
 )
 
-_LLM = LLMConfig(endpoint="http://llm.test", model="test-model")
+_LLM = LLMConfig(endpoint="http://llm.test", model="test-model", timeout=30)
 
 _FULL_RESULTS = DiscoveryResults(
     rss_feeds=[
@@ -40,6 +40,19 @@ _FULL_RESULTS = DiscoveryResults(
             source="script#__NEXT_DATA__",
             path="props.pageProps.articles",
             sample_keys=["slug", "title", "excerpt"],
+        )
+    ],
+    graphql_operations=[
+        GraphQLOperation(
+            endpoint="https://api.example.com/graphql",
+            operation_name="GetPosts",
+            operation_type="query",
+            query="query GetPosts { posts { title url date } }",
+            response_path="posts",
+            item_count=10,
+            sample_keys=["title", "url", "date"],
+            feed_score=0.78,
+            detected_via="network_capture",
         )
     ],
     xpath_candidates=[
@@ -187,3 +200,34 @@ def test_bridge_user_prompt_contains_candidate_counts():
     _, user = render_bridge_prompt(_bridge_req())
     assert "(2)" in user  # rss_feeds count
     assert "(1)" in user  # api/ej/xp counts
+
+
+def test_bridge_user_prompt_includes_one_shot():
+    _, user = render_bridge_prompt(_bridge_req())
+    assert "Reference example of a minimal valid bridge" in user
+
+
+def test_bridge_user_prompt_targets_url_after_example():
+    _, user = render_bridge_prompt(_bridge_req())
+    lines = user.strip().splitlines()
+    assert lines[0].startswith("Reference example of a minimal valid bridge")
+    assert any(line.startswith("TARGET URL:") for line in lines)
+
+
+# ── GraphQL prompt tests ──────────────────────────────────────────────────────
+
+def test_strategy_user_prompt_contains_graphql_operation():
+    _, user = render_strategy_prompt(_analyze_req())
+    assert "https://api.example.com/graphql" in user
+
+
+def test_strategy_user_prompt_contains_graphql_count():
+    _, user = render_strategy_prompt(_analyze_req())
+    assert "graphql       (1)" in user
+
+
+def test_strategy_user_prompt_no_graphql():
+    req = _analyze_req(results=DiscoveryResults(), skeleton="")
+    _, user = render_strategy_prompt(req)
+    assert "graphql       (0)" in user
+    assert "none" in user

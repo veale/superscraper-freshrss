@@ -29,6 +29,12 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       PLAYWRIGHT_BROWSERS_PATH: "/app/browsers"
+      # AUTOFEED_FETCH_BACKEND: "bundled"               # bundled|playwright_server|browserless|scrapling_serve
+      # AUTOFEED_PLAYWRIGHT_WS: "ws://playwright-server:3000/"
+      # AUTOFEED_BROWSERLESS_WS: "ws://browserless:3000?token=${BROWSERLESS_TOKEN}"
+      # AUTOFEED_SCRAPLING_URL: "http://scrapling-serve:8001"
+      # AUTOFEED_RSS_BRIDGE_URL: "http://rss-bridge:80"
+      # AUTOFEED_SERVICES_TOKEN: ""
     volumes:
       - sidecar-data:/app/data
       - sidecar-browsers:/app/browsers   # Cache Chromium across rebuilds
@@ -40,7 +46,7 @@ services:
     shm_size: '1gb'
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "curl", "--fail", "--max-time", "3", "http://localhost:8000/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -58,6 +64,30 @@ services:
     restart: unless-stopped
     profiles:
       - with-rss-bridge   # Only starts with: docker compose --profile with-rss-bridge up
+
+  # ── Optional: bring-your-own browser farm ──────────────────────────────
+  # Uncomment and configure ONE of these, then set
+  # AUTOFEED_FETCH_BACKEND on the autofeed-sidecar service to match.
+
+  playwright-server:
+    image: mcr.microsoft.com/playwright:v1.47.0-jammy
+    command: ["npx", "-y", "playwright", "run-server", "--port=3000"]
+    ports: ["3001:3000"]
+    profiles: ["with-external-browsers"]
+
+  browserless:
+    image: ghcr.io/browserless/chromium:latest
+    environment:
+      TOKEN: "${BROWSERLESS_TOKEN:-}"
+      MAX_CONCURRENT_SESSIONS: "5"
+    ports: ["3002:3000"]
+    profiles: ["with-external-browsers"]
+
+  scrapling-serve:
+    image: ghcr.io/d4vinci/scrapling:latest
+    command: ["scrapling", "serve", "--host", "0.0.0.0", "--port", "8001"]
+    ports: ["8001:8001"]
+    profiles: ["with-external-browsers"]
 
 volumes:
   freshrss-data:
