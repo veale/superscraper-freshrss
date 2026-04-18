@@ -101,6 +101,7 @@ async def recommend_candidate_selectors(
     html_skeleton: str,
     llm,
     refine_examples: dict[str, list[str]] | None = None,
+    raw_html: str = "",
 ) -> dict:
     """Ask the LLM to improve one XPath candidate's selectors, including item_selector.
 
@@ -149,28 +150,51 @@ async def recommend_candidate_selectors(
         "Return JSON only, no prose."
     )
 
-    skeleton_excerpt = html_skeleton[:8000] if html_skeleton else "(not available)"
-    user = (
-        f"Page URL: {url}\n\n"
-        f"Current selectors:\n"
-        f"  item: {candidate.item_selector}\n"
-        f"  title: {candidate.title_selector}\n"
-        f"  link: {candidate.link_selector}\n"
-        f"  content: {candidate.content_selector}\n"
-        f"  timestamp: {candidate.timestamp_selector}\n"
-        f"  author: {candidate.author_selector}\n"
-        f"  thumbnail: {candidate.thumbnail_selector}\n\n"
-        f"HTML skeleton (first 8000 chars):\n{skeleton_excerpt}\n"
-    )
+    anchored_snippet = ""
+    if refine_examples and raw_html:
+        from app.utils.skeleton import build_anchored_snippet
+        for role in ("title", "link", "content"):
+            vals = refine_examples.get(role) or []
+            if vals:
+                anchored_snippet = build_anchored_snippet(raw_html, vals[0])
+                if anchored_snippet:
+                    break
+
+    parts = [
+        f"Page URL: {url}",
+        "",
+        "Current selectors:",
+        f"  item: {candidate.item_selector}",
+        f"  title: {candidate.title_selector}",
+        f"  link: {candidate.link_selector}",
+        f"  content: {candidate.content_selector}",
+        f"  timestamp: {candidate.timestamp_selector}",
+        f"  author: {candidate.author_selector}",
+        f"  thumbnail: {candidate.thumbnail_selector}",
+        "",
+    ]
 
     if refine_examples:
-        user += "\nUSER EXAMPLES (one real item on this page):\n"
+        parts.append("USER EXAMPLES (one real item on this page):")
         for role, vals in refine_examples.items():
             if vals:
-                user += f"  {role}: {vals[0]}\n"
-        user += "Your selectors must reproduce these when applied to the page.\n"
+                parts.append(f"  {role}: {vals[0][:200]}")
+        parts.append("Your selectors MUST reproduce these when applied to the page.")
+        parts.append("")
 
-    user += "\nPropose improved selectors. Return JSON only."
+    if anchored_snippet:
+        parts.append("HTML snippet around the user's example (text PRESERVED — use this to verify your selectors):")
+        parts.append(anchored_snippet)
+        parts.append("")
+        parts.append("Additional context — structural skeleton of the wider page:")
+        parts.append(html_skeleton[:4000] if html_skeleton else "(not available)")
+    else:
+        parts.append("HTML skeleton (first 8000 chars, text collapsed to [text:N] placeholders):")
+        parts.append(html_skeleton[:8000] if html_skeleton else "(not available)")
+
+    parts.append("")
+    parts.append("Propose improved selectors. Return JSON only.")
+    user = "\n".join(parts)
 
     try:
         result = await client.chat_completion(system, user)

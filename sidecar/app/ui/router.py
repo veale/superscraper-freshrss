@@ -697,6 +697,7 @@ async def candidate_refine(request: Request):
     # ── mode: llm ─────────────────────────────────────────────────────────────
     if mode == "llm":
         from app.llm.analyzer import recommend_candidate_selectors
+        from app.scraping.scrape import fetch_and_parse, _scrape_xpath_from_selector
         from lxml import etree as _lxml_etree
 
         refine_examples: dict[str, list[str]] = {}
@@ -711,6 +712,14 @@ async def candidate_refine(request: Request):
                 {"error": "No LLM configured. Add an LLM in Settings first."},
                 status_code=400,
             )
+
+        # Fetch once; the raw HTML feeds both the anchored snippet for the LLM
+        # and the post-refine preview scrape.
+        try:
+            html, sel, _ = await fetch_and_parse(result.url, services, timeout=30)
+        except RuntimeError as exc:
+            return JSONResponse({"error": f"Fetch failed: {str(exc)[:200]}"}, status_code=502)
+
         try:
             improved = await recommend_candidate_selectors(
                 url=result.url,
@@ -718,6 +727,7 @@ async def candidate_refine(request: Request):
                 html_skeleton=stored.get("html_skeleton", ""),
                 llm=llm,
                 refine_examples=refine_examples or None,
+                raw_html=html,
             )
         except RuntimeError as exc:
             return JSONResponse({"error": str(exc)}, status_code=502)
@@ -741,12 +751,6 @@ async def candidate_refine(request: Request):
         c.author_selector    = improved.get("author_selector")    or c.author_selector
         c.thumbnail_selector = improved.get("thumbnail_selector") or c.thumbnail_selector
         _persist_candidate()
-
-        from app.scraping.scrape import fetch_and_parse, _scrape_xpath_from_selector
-        try:
-            html, sel, _ = await fetch_and_parse(result.url, services, timeout=30)
-        except RuntimeError as exc:
-            return JSONResponse({"error": f"Fetch failed: {str(exc)[:200]}"}, status_code=502)
 
         selectors = ScrapeSelectors(
             item=c.item_selector,

@@ -66,3 +66,77 @@ def _collapse_text(el) -> None:
         el.tail = f"[text:{words}]"
     elif el.tail:
         el.tail = None
+
+
+def build_anchored_snippet(
+    raw_html: str,
+    anchor_text: str,
+    *,
+    max_chars: int = 4_000,
+    context_ancestors: int = 4,
+) -> str:
+    """Return an HTML snippet containing *anchor_text* with text preserved.
+
+    Used for LLM refinement prompts — the model needs to see where a specific
+    piece of text lives in the DOM, which the collapsed skeleton can't show.
+    Attributes are pruned the same way as build_skeleton, but text is kept.
+    Returns "" if the anchor can't be found.
+    """
+    if not raw_html or not anchor_text:
+        return ""
+
+    needle = " ".join(anchor_text.split())[:60].lower()
+    if not needle:
+        return ""
+
+    try:
+        doc = lxml_html.document_fromstring(raw_html)
+    except Exception:
+        return ""
+
+    for tag in ("script", "style", "noscript", "svg"):
+        for el in doc.iter(tag):
+            parent = el.getparent()
+            if parent is not None:
+                parent.remove(el)
+
+    target = None
+    for el in doc.iter():
+        t = " ".join((el.text_content() or "").split()).lower()
+        if needle in t:
+            target = el
+            changed = True
+            while changed:
+                changed = False
+                for child in target:
+                    tc = " ".join((child.text_content() or "").split()).lower()
+                    if needle in tc:
+                        target = child
+                        changed = True
+                        break
+    if target is None:
+        return ""
+
+    root = target
+    for _ in range(context_ancestors):
+        parent = root.getparent()
+        if parent is None:
+            break
+        root = parent
+
+    for el in root.iter():
+        if not isinstance(el.tag, str):
+            continue
+        _strip_attrs(el)
+
+    snippet = etree.tostring(root, encoding="unicode", method="html")
+    if len(snippet) <= max_chars:
+        return snippet
+
+    lower_snip = snippet.lower()
+    idx = lower_snip.find(needle)
+    if idx < 0:
+        return snippet[:max_chars]
+    half = max_chars // 2
+    start = max(0, idx - half)
+    return snippet[start : start + max_chars]

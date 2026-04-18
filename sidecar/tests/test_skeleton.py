@@ -5,7 +5,7 @@ import sys
 import os
 
 
-from app.utils.skeleton import build_skeleton
+from app.utils.skeleton import build_skeleton, build_anchored_snippet
 
 
 def test_scripts_stripped():
@@ -107,6 +107,63 @@ def test_itemprop_preserved():
     html = '<html><body><span itemprop="name">Article Title</span></body></html>'
     result = build_skeleton(html)
     assert 'itemprop="name"' in result
+
+
+_HRW_LIKE_HTML = """
+<html><body>
+<ul class="media-list__items">
+  <li class="media-list__item py-4">
+    <article class="media-block">
+      <h2 class="card__title">Remembering a Steadfast Hong Kong Democracy Activist</h2>
+      <a href="/news/2024/01/01/hong-kong">Read more</a>
+    </article>
+  </li>
+  <li class="media-list__item py-4">
+    <article class="media-block">
+      <h2 class="card__title">Myanmar Junta Airstrikes Kill Civilians</h2>
+      <a href="/news/2024/01/02/myanmar">Read more</a>
+    </article>
+  </li>
+</ul>
+</body></html>
+"""
+
+
+def test_anchored_snippet_contains_text():
+    result = build_anchored_snippet(
+        _HRW_LIKE_HTML,
+        "Remembering a Steadfast Hong Kong",
+    )
+    assert result, "Expected a non-empty snippet"
+    assert "Remembering" in result
+    assert "Steadfast Hong Kong" in result
+
+
+def test_anchored_snippet_contains_class():
+    result = build_anchored_snippet(
+        _HRW_LIKE_HTML,
+        "Remembering a Steadfast Hong Kong",
+    )
+    assert "media-block" in result or "card__title" in result or "media-list__item" in result
+
+
+def test_anchored_snippet_respects_max_chars():
+    result = build_anchored_snippet(
+        _HRW_LIKE_HTML,
+        "Remembering a Steadfast Hong Kong",
+        max_chars=200,
+    )
+    assert len(result) <= 200
+
+
+def test_anchored_snippet_missing_anchor_returns_empty():
+    result = build_anchored_snippet(_HRW_LIKE_HTML, "This text is not on the page")
+    assert result == ""
+
+
+def test_anchored_snippet_empty_inputs():
+    assert build_anchored_snippet("", "anything") == ""
+    assert build_anchored_snippet(_HRW_LIKE_HTML, "") == ""
 
 
 def test_structure_preserved():
