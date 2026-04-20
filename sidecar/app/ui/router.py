@@ -1055,7 +1055,7 @@ async def candidate_refine(request: Request):
             improved = await recommend_candidate_selectors(
                 url=result.url,
                 candidate=c,
-                html_skeleton=stored.get("html_skeleton", ""),
+                html_skeleton=stored.get("results", {}).get("html_skeleton", ""),
                 llm=llm,
                 refine_examples=refine_examples or None,
                 raw_html=html,
@@ -2035,7 +2035,7 @@ async def analyze(
         req = AnalyzeRequest(
             url=target_url,
             results=disc.results,
-            html_skeleton=stored.get("html_skeleton", ""),
+            html_skeleton=stored.get("results", {}).get("html_skeleton", ""),
             llm=llm,
             discover_id=discover_id,
         )
@@ -2052,7 +2052,7 @@ async def analyze(
                 "method": "analyzer.recommend_strategy (LLM picks between RSS/JSON/GraphQL/embedded/XPath)",
             },
             "inputs": {
-                "html_skeleton_bytes": len(stored.get("html_skeleton", "")),
+                "html_skeleton_bytes": len(stored.get("results", {}).get("html_skeleton", "")),
                 "force": force,
                 "force_skip_rss": disc.results.force_skip_rss,
             },
@@ -2170,7 +2170,7 @@ async def bridge_generate(request: Request) -> HTMLResponse:
         req = BridgeGenerateRequest(
             url=target_url,
             results=disc.results,
-            html_skeleton=stored.get("html_skeleton", ""),
+            html_skeleton=stored.get("results", {}).get("html_skeleton", ""),
             llm=llm,
             hint=hint,
             discover_id=discover_id,
@@ -2188,7 +2188,7 @@ async def bridge_generate(request: Request) -> HTMLResponse:
             },
             "inputs": {
                 "hint": hint,
-                "html_skeleton_bytes": len(stored.get("html_skeleton", "")),
+                "html_skeleton_bytes": len(stored.get("results", {}).get("html_skeleton", "")),
             },
             "llm_call": llm_capture,
             "outputs": {
