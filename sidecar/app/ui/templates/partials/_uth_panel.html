@@ -1,0 +1,19 @@
+{# Reusable "Under the hood" transparency panel.
+   Usage: {% include "partials/_uth_panel.html" with context %}
+   Requires variables in the local scope:
+     - discover_id   (string)
+     - uth_panel     (panel key, e.g. "xpath:0", "rss:1", "global", "discovery")
+     - uth_title     (optional heading — defaults to "Under the hood")
+     - uth_hint      (optional one-liner shown beside the summary)
+#}
+<details class="under-the-hood" data-uth data-panel="{{ uth_panel }}" data-discover-id="{{ discover_id }}">
+  <summary>
+    <span class="uth-icon" aria-hidden="true">&#9881;</span>
+    <span class="uth-title">{{ uth_title | default("Under the hood") }}</span>
+    {% if uth_hint %}<span class="uth-hint text-tertiary">{{ uth_hint }}</span>{% endif %}
+    <span class="uth-toggle-hint text-tertiary">&mdash; click to inspect HTML, prompts, responses, and provenance</span>
+  </summary>
+  <div class="uth-body" data-uth-body>
+    <p class="uth-placeholder text-tertiary">Loading trace…</p>
+  </div>
+</details>

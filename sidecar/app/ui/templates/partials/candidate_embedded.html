@@ -35,6 +35,10 @@
     </div>
   {% endif %}
 
+  {% with uth_panel="embedded:" ~ e.index, uth_hint="Embedded JSON blob #" ~ e.index %}
+    {% include "partials/_uth_panel.html" %}
+  {% endwith %}
+
   <div class="candidate-footer">
     <details class="candidate-selectors inline">
       <summary class="btn btn-secondary btn-sm">Selectors</summary>

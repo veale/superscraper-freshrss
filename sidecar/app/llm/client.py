@@ -30,8 +30,18 @@ class LLMClient:
         self.model = model
         self.timeout = timeout
 
-    async def chat_completion(self, system: str, user: str) -> CompletionResult:
-        """Call the LLM and return parsed JSON content + token count."""
+    async def chat_completion(
+        self,
+        system: str,
+        user: str,
+        capture: dict | None = None,
+    ) -> CompletionResult:
+        """Call the LLM and return parsed JSON content + token count.
+
+        When *capture* is provided it is populated in-place with prompts,
+        raw response content, and tokens so callers can record the full
+        LLM interaction for transparency / debugging panels.
+        """
         payload = {
             "model": self.model,
             "messages": [
@@ -44,6 +54,12 @@ class LLMClient:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
+        if capture is not None:
+            capture["endpoint"] = f"{self.endpoint}/chat/completions"
+            capture["model"] = self.model
+            capture["system"] = system
+            capture["user"] = user
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as http:
                 resp = await http.post(
@@ -52,13 +68,21 @@ class LLMClient:
                     headers=headers,
                 )
         except httpx.TimeoutException as exc:
+            if capture is not None:
+                capture["error"] = f"timeout after {self.timeout}s"
             raise LLMTimeout(f"Request timed out after {self.timeout}s") from exc
         except httpx.HTTPError as exc:
+            if capture is not None:
+                capture["error"] = str(exc)
             raise LLMError(f"HTTP error contacting LLM: {exc}") from exc
 
         if resp.status_code in (401, 403):
+            if capture is not None:
+                capture["error"] = f"{resp.status_code} unauthorized"
             raise LLMAuth(f"LLM returned {resp.status_code} Unauthorized")
         if resp.status_code != 200:
+            if capture is not None:
+                capture["error"] = f"{resp.status_code}: {resp.text[:300]}"
             raise LLMError(
                 f"LLM returned {resp.status_code}: {resp.text[:300]}"
             )
@@ -67,6 +91,8 @@ class LLMClient:
             data = resp.json()
             content_str: str = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, ValueError) as exc:
+            if capture is not None:
+                capture["error"] = f"malformed: {exc}"
             raise LLMMalformed(
                 f"Unexpected LLM response structure: {exc}"
             ) from exc
@@ -76,6 +102,10 @@ class LLMClient:
             tokens = int(data["usage"]["total_tokens"])
         except (KeyError, TypeError, ValueError):
             pass
+
+        if capture is not None:
+            capture["raw_content"] = content_str
+            capture["tokens_used"] = tokens
 
         return CompletionResult(
             content=_parse_json(content_str),

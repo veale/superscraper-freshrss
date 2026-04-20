@@ -26,6 +26,10 @@
     </div>
   {% endif %}
 
+  {% with uth_panel="rss:" ~ e.index, uth_hint="RSS / Atom feed #" ~ e.index %}
+    {% include "partials/_uth_panel.html" %}
+  {% endwith %}
+
   <details class="candidate-subscribe">
     <summary>Save as feed</summary>
     <div class="subscribe-body">

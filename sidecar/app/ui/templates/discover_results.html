@@ -29,6 +29,11 @@
     </p>
   {% endif %}
 
+  {% with uth_panel="discovery", uth_title="Under the hood — discovery pipeline",
+            uth_hint="Every fetch, pruning step, selector generator, and their outputs" %}
+    {% include "partials/_uth_panel.html" %}
+  {% endwith %}
+
   {% if has_llm %}
     <div class="results-actions">
       <a href="/analyze/{{ discover_id }}" class="btn btn-secondary">Analyze with LLM</a>
@@ -83,6 +88,11 @@
       <button type="submit" class="btn btn-primary">Apply to all candidates</button>
     </form>
   </details>
+
+  {% with uth_panel="global", uth_title="Under the hood — global refine",
+            uth_hint="HTML snippets fed to refine, LLM prompts/responses, XPath moves" %}
+    {% include "partials/_uth_panel.html" %}
+  {% endwith %}
 
   {# Retry options for different discovery modes #}
   {% set phase2_ran = results.phase2_used if results else False %}

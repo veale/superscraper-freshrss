@@ -94,7 +94,11 @@
       "Bash(python -m pytest sidecar/tests/ -x -q --ignore=sidecar/tests/test_refinement_pipeline.py)",
       "Bash(python -m pytest sidecar/tests/test_bridge_contract.py::test_bridge_generate_to_deploy_flow -q)",
       "Bash(python -m pytest sidecar/tests/ -q --ignore=sidecar/tests/test_refinement_pipeline.py --deselect=sidecar/tests/test_bridge_contract.py::test_bridge_generate_to_deploy_flow)",
-      "Bash(python -m pytest sidecar/tests/test_bridge_flow.py sidecar/tests/test_inbound_auth.py::test_bridge_deploy_needs_token -q)"
+      "Bash(python -m pytest sidecar/tests/test_bridge_flow.py sidecar/tests/test_inbound_auth.py::test_bridge_deploy_needs_token -q)",
+      "Bash(node -c /Users/michael/Developer/autofeed-freshrss/sidecar/app/static/app.js)",
+      "Bash(python -c \"from jinja2 import Environment, FileSystemLoader; env = Environment\\(loader=FileSystemLoader\\('app/ui/templates'\\)\\); t = env.get_template\\('discover_results.html'\\); print\\('OK'\\); env.get_template\\('partials/_uth_panel.html'\\); print\\('UTH OK'\\); env.get_template\\('partials/candidate_xpath.html'\\); print\\('xpath OK'\\); env.get_template\\('partials/candidate_rss.html'\\); print\\('rss OK'\\); env.get_template\\('partials/candidate_api.html'\\); print\\('api OK'\\); env.get_template\\('partials/candidate_embedded.html'\\); print\\('embedded OK'\\); env.get_template\\('partials/candidate_graphql.html'\\); print\\('graphql OK'\\)\")",
+      "Bash(python -c \"from app.services import trace_store; from app.ui.router import router; print\\('router routes:'\\); [print\\(' ', r.path, '->', getattr\\(r, 'methods', None\\)\\) for r in router.routes if '/debug' in r.path]\")",
+      "Bash(python -c \"from app.main import app; print\\('App OK'\\); print\\('Routes:', len\\(app.routes\\)\\)\")"
     ],
     "additionalDirectories": [
       "/tmp",

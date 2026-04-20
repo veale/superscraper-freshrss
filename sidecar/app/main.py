@@ -45,6 +45,7 @@ from app.scraping.config_store import delete_config, load_config, save_config
 from app.scraping.scrape import run_scrape
 from app.services.config import ServiceConfig
 from app.services.discovery_cache import load_discovery, store_browser_html, store_discovery
+from app.services import trace_store
 from app.ui.router import router as ui_router
 from app.ui.settings_store import get_store, init_store
 
@@ -191,12 +192,14 @@ _browser_limiter = Limiter(key_func=_get_rate_limit_key)
 async def _discover_with_browser(req: DiscoverRequest, request: Request) -> DiscoverResponse:
     """Handler for browser-based discovery with stricter rate limits."""
     _check_inbound_token(request, require=True)
-    response = await run_discovery(req)
+    trace: dict = {}
+    response = await run_discovery(req, trace=trace)
     payload = response.model_dump(mode="json")
     discover_id = store_discovery(payload)
     response.discover_id = discover_id
     if response.browser_html:
         store_browser_html(discover_id, response.browser_html)
+    _persist_discovery_trace(discover_id, req.url, trace)
     return response
 
 
@@ -268,16 +271,29 @@ async def discover(request: Request):
         if req.use_browser:
             return await _discover_with_browser(req, request)
 
-    response = await run_discovery(req)
+    trace: dict = {}
+    response = await run_discovery(req, trace=trace)
     payload = response.model_dump(mode="json")
     discover_id = store_discovery(payload)
     response.discover_id = discover_id
     if response.browser_html:
         store_browser_html(discover_id, response.browser_html)
+    _persist_discovery_trace(discover_id, req.url, trace)
 
     if is_form:
         return RedirectResponse(f"/d/{discover_id}", status_code=303)
     return response
+
+
+def _persist_discovery_trace(discover_id: str, url: str, trace: dict) -> None:
+    """Transfer the cascade's populated trace dict into the in-memory trace_store."""
+    trace_store.init_discovery_trace(discover_id, url)
+    artifacts = trace.pop("artifacts", {}) or {}
+    for kind, content in artifacts.items():
+        if content:
+            trace_store.store_artifact(discover_id, kind, content)
+    for section, data in trace.items():
+        trace_store.set_discovery(discover_id, section, data)
 
 
 @app.get("/discover/{discover_id}", response_model=DiscoverResponse)

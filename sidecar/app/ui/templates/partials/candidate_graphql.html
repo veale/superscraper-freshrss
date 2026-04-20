@@ -42,6 +42,10 @@
     <p class="text-secondary" style="font-size:12px;margin-top:8px;">Detected via: {{ e.c.detected_via }}</p>
   {% endif %}
 
+  {% with uth_panel="graphql:" ~ e.index, uth_hint="GraphQL operation #" ~ e.index %}
+    {% include "partials/_uth_panel.html" %}
+  {% endwith %}
+
   <div class="candidate-footer">
     <details class="candidate-subscribe inline">
       <summary class="btn btn-primary btn-sm">Save as feed</summary>

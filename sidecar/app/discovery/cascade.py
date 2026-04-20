@@ -59,13 +59,34 @@ _HEADERS = {
 }
 
 
-async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
-    """Execute the full discovery cascade for *req.url*."""
+async def run_discovery(
+    req: DiscoverRequest,
+    trace: dict | None = None,
+) -> DiscoverResponse:
+    """Execute the full discovery cascade for *req.url*.
+
+    When *trace* is provided it is populated with intermediate artifacts
+    (raw_html, pruned_html, skeleton) and per-step provenance so the UI
+    transparency panels can render what was actually fed into each stage.
+    """
+
+    def _t(path: str, value):
+        if trace is None:
+            return
+        cur = trace
+        parts = path.split(".")
+        for p in parts[:-1]:
+            cur = cur.setdefault(p, {})
+        cur[parts[-1]] = value
 
     errors: list[str] = []
     url = req.url.strip()
     html = ""
     page_meta = PageMeta()
+    _t("fetch.url", url)
+    _t("fetch.method", "httpx (Chrome UA, redirects)")
+    _t("fetch.headers", dict(_HEADERS))
+    _t("fetch.timeout", req.timeout)
 
     async with httpx.AsyncClient(
         headers=_HEADERS,
@@ -78,12 +99,19 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
             resp = await client.get(url)
             resp.raise_for_status()
             html = resp.text
+            _t("fetch.status", resp.status_code)
+            _t("fetch.final_url", str(resp.url))
+            _t("fetch.response_headers", dict(resp.headers))
+            _t("artifacts.raw_html", html)
         except httpx.HTTPStatusError as exc:
             errors.append(f"HTTP {exc.response.status_code} fetching {url}")
+            _t("fetch.status", exc.response.status_code)
         except httpx.TimeoutException:
             errors.append(f"Timeout fetching {url}")
+            _t("fetch.error", "timeout")
         except httpx.HTTPError as exc:
             errors.append(f"Error fetching {url}: {exc}")
+            _t("fetch.error", str(exc))
 
         if not html:
             return DiscoverResponse(
@@ -102,6 +130,11 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
         except Exception as exc:
             rss_feeds = []
             errors.append(f"RSS autodiscovery error: {exc}")
+        _t("steps.rss", {
+            "method": "<link rel=alternate> + <a> probes + well-known paths (feed.xml, rss, atom.xml)",
+            "count": len(rss_feeds),
+            "urls": [f.url for f in rss_feeds],
+        })
 
         # ── Step 2: Embedded JSON detection ────────────────────────────────
         try:
@@ -112,6 +145,11 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
         except Exception as exc:
             embedded_json = []
             errors.append(f"Embedded JSON detection error: {exc}")
+        _t("steps.embedded_json", {
+            "method": "script[type=application/ld+json] + __NEXT_DATA__ + other inline JSON blobs",
+            "count": len(embedded_json),
+            "paths": [e.path for e in embedded_json],
+        })
 
         # ── Step 3: Static JS API URL extraction + probing ─────────────────
         try:
@@ -121,6 +159,11 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
         except Exception as exc:
             api_endpoints = []
             errors.append(f"Static JS analysis error: {exc}")
+        _t("steps.api_static", {
+            "method": "regex-scan for /api/, .json, fetch('...') URLs inside inline + external JS files (max 5)",
+            "count": len(api_endpoints),
+            "urls": [a.url for a in api_endpoints],
+        })
 
         # ── Tree pruning pre-pass ──────────────────────────────────────────
         # Only XPath/selector generators and the skeleton builder use pruned HTML.
@@ -133,6 +176,12 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
         except Exception as exc:
             pruned_html = html
             errors.append(f"Tree pruning error: {exc}")
+        _t("artifacts.pruned_html", pruned_html)
+        _t("steps.prune", {
+            "method": "tree_pruning.build_pruned_html (listing_mode=True — keeps article-card meta nodes)",
+            "input_bytes": len(html),
+            "output_bytes": len(pruned_html),
+        })
 
         # ── Step 5 (Phase 1): Heuristic XPath candidate generation ─────────
         try:
@@ -140,6 +189,11 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
         except Exception as exc:
             xpath_candidates = []
             errors.append(f"XPath generation error: {exc}")
+        _t("steps.xpath_heuristic", {
+            "method": "generate_xpath_candidates (frequency + co-occurrence heuristic on pruned HTML)",
+            "count": len(xpath_candidates),
+            "item_selectors": [c.item_selector for c in xpath_candidates],
+        })
 
     # ── Phase 2 steps (browser required) ──────────────────────────────────
     # Run when:
@@ -158,6 +212,9 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
             or not api_endpoints
         )
     )
+    _t("decision.needs_browser", needs_browser)
+    _t("decision.any_live_rss", any_live_rss)
+    _t("decision.force_skip_rss", req.force_skip_rss)
 
     browser_html = ""
     graphql_operations = []
@@ -175,6 +232,13 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
                 url, req.services, timeout=min(req.timeout, 30),
                 stealth=use_stealth,
             )
+            _t("artifacts.browser_html", browser_html)
+            _t("steps.browser_fetch", {
+                "method": f"fetch_with_capture (backend={req.services.fetch_backend}, stealth={use_stealth})",
+                "html_bytes": len(browser_html),
+                "network_response_count": len(network_responses),
+                "network_urls": [r.get("url", "") for r in network_responses[:20]],
+            })
             for resp_data in network_responses:
                 sc = score_feed_likeness(resp_data["body"])
                 if sc >= 0.15:
@@ -214,6 +278,11 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
         except Exception as exc:
             graphql_operations = []
             errors.append(f"GraphQL detection error: {exc}")
+        _t("steps.graphql", {
+            "method": "detect_graphql_in_capture (inspects intercepted POSTs for 'query'/'variables' payloads)",
+            "count": len(graphql_operations),
+            "operations": [g.operation_name or "" for g in graphql_operations],
+        })
 
         # ── Step 5 (Phase 2): Scrapling selector generation ────────────────
         # Use browser-rendered HTML when available; prune before passing to
@@ -228,8 +297,14 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
             xpath_candidates = _merge_xpath_candidates(
                 scrapling_candidates, xpath_candidates
             )
+            _t("steps.xpath_scrapling", {
+                "method": "scrapling auto-selector generation on browser-rendered pruned HTML",
+                "count": len(scrapling_candidates),
+                "item_selectors": [c.item_selector for c in scrapling_candidates],
+            })
         except Exception as exc:
             errors.append(f"Scrapling selector generation error: {exc}")
+            _t("steps.xpath_scrapling", {"method": "scrapling auto-selector generation", "error": str(exc)})
 
     # ── Step 5.5: Initial-examples anchor (LCA-based, cross-family union) ─────
     if req.initial_examples:
@@ -240,6 +315,15 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
         except Exception as exc:
             outcome = None
             errors.append(f"Initial-examples anchor error: {exc}")
+        _t("steps.initial_examples", {
+            "method": "multi_field_anchor.find_items_from_rows (LCA over user-supplied example rows)",
+            "rows": req.initial_examples,
+            "outcome": {
+                "item_selector": outcome.item_selector if outcome else None,
+                "confidence": outcome.confidence if outcome else None,
+                "item_count": outcome.item_count if outcome else None,
+            } if outcome else None,
+        })
         if outcome is not None:
             from app.models.schemas import XPathCandidate
             anchored = XPathCandidate(
@@ -258,8 +342,16 @@ async def run_discovery(req: DiscoverRequest) -> DiscoverResponse:
             xpath_candidates = _merge_xpath_candidates([anchored], xpath_candidates)
 
     html_skeleton = build_skeleton(browser_html or html) if (browser_html or html) else ""
+    _t("artifacts.html_skeleton", html_skeleton)
+    _t("steps.skeleton", {
+        "method": "utils.skeleton.build_skeleton (collapses text to [text:N] markers, keeps structure)",
+        "source": "browser_html" if browser_html else "raw_html",
+        "output_bytes": len(html_skeleton),
+    })
 
     backend_used = req.services.fetch_backend if needs_browser else "http"
+    _t("decision.backend_used", backend_used)
+    _t("decision.stealth_used", stealth_used)
 
     return DiscoverResponse(
         url=url,

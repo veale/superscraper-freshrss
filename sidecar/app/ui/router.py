@@ -5,8 +5,10 @@ from __future__ import annotations
 import os
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+
+from app.services import trace_store
 
 _templates_dir = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=_templates_dir)
@@ -290,6 +292,22 @@ async def preview_fragment(
             "date":    sum(1 for it in items if it.timestamp),
             "content": sum(1 for it in items if it.content),
         }
+        trace_store.add_action(discover_id, {
+            "kind": "preview",
+            "panel": f"{type}:{index}",
+            "inputs": {
+                "scrape_request": req.model_dump(mode="json"),
+            },
+            "outputs": {
+                "item_count": total,
+                "field_counts": fc,
+                "errors": list(scrape.errors),
+                "first_items": [it.model_dump() for it in items[:3]],
+            },
+            "provenance": {
+                "method": f"run_scrape (strategy={req.strategy.value})",
+            },
+        })
         return templates.TemplateResponse(
             request,
             "partials/preview_table.html",
@@ -302,6 +320,11 @@ async def preview_fragment(
             },
         )
     except Exception as exc:
+        trace_store.add_action(discover_id, {
+            "kind": "preview",
+            "panel": f"{type}:{index}",
+            "error": str(exc)[:500],
+        })
         return _err(f"Preview failed: {str(exc)[:300]}")
 
 
@@ -423,6 +446,29 @@ async def preview_fragment_refined(request: Request):
             "results": res.model_dump(),
             "errors": result.errors,
         })
+
+    trace_store.add_action(discover_id, {
+        "kind": "global-refine",
+        "panel": "global",
+        "mode": "preview-fragment-refined",
+        "inputs": {
+            "refine_examples": refine_examples,
+            "candidate_counts": {
+                "rss": len(res.rss_feeds),
+                "api": len(res.api_endpoints),
+                "embedded": len(res.embedded_json),
+                "xpath": len(res.xpath_candidates),
+                "graphql": len(res.graphql_operations),
+            },
+        },
+        "provenance": {
+            "method": (
+                "Re-runs every candidate's preview. When refine_examples is set, "
+                "fetches HTML once and runs XPath candidates in parallel against "
+                "shared_html via _scrape_xpath_from_selector."
+            ),
+        },
+    })
 
     def _render_preview(items, errors, warnings):
         total = len(items)
@@ -640,13 +686,39 @@ async def llm_xpath_hunt(discover_id: str, request: Request):
 
     html_skeleton = stored.get("results", {}).get("html_skeleton", "")
 
+    llm_capture: dict = {}
     try:
-        proposal = await xpath_hunt(result.url, html, html_skeleton, llm)
+        proposal = await xpath_hunt(result.url, html, html_skeleton, llm, capture=llm_capture)
     except RuntimeError as exc:
+        trace_store.add_action(discover_id, {
+            "kind": "llm-xpath-hunt",
+            "panel": "global",
+            "provenance": {"method": "analyzer.xpath_hunt (forced-XPath prompt, RSS/JSON/GraphQL forbidden)"},
+            "inputs": {
+                "html_source": "cached browser HTML" if cached else "fresh fetch_and_parse",
+                "html_bytes": len(html),
+                "html_skeleton_bytes": len(html_skeleton),
+            },
+            "llm_call": llm_capture,
+            "error": str(exc),
+        })
         return JSONResponse({"error": str(exc)}, status_code=502)
 
     item_sel = proposal.get("item_selector") or ""
     if not item_sel:
+        trace_store.add_action(discover_id, {
+            "kind": "llm-xpath-hunt",
+            "panel": "global",
+            "provenance": {"method": "analyzer.xpath_hunt"},
+            "inputs": {
+                "html_source": "cached browser HTML" if cached else "fresh fetch_and_parse",
+                "html_bytes": len(html),
+                "html_skeleton_bytes": len(html_skeleton),
+            },
+            "llm_call": llm_capture,
+            "outputs": {"proposal": proposal},
+            "error": "LLM did not return an item_selector.",
+        })
         return JSONResponse({"error": "LLM did not return an item_selector."}, status_code=422)
 
     # Probe the proposed selector before returning.
@@ -681,6 +753,24 @@ async def llm_xpath_hunt(discover_id: str, request: Request):
             "errors": result.errors,
         })
 
+    trace_store.add_action(discover_id, {
+        "kind": "llm-xpath-hunt",
+        "panel": "global",
+        "provenance": {
+            "method": "analyzer.xpath_hunt (forced-XPath prompt, RSS/JSON/GraphQL forbidden)",
+            "html_source": "cached browser HTML" if cached else "fresh fetch_and_parse",
+        },
+        "inputs": {
+            "html_bytes": len(html),
+            "html_skeleton_bytes": len(html_skeleton),
+        },
+        "llm_call": llm_capture,
+        "outputs": {
+            "proposal": proposal,
+            "probe_count": probe_count,
+            "candidate_index": 0,
+        },
+    })
     return JSONResponse({
         "item_selector": item_sel,
         "probe_count": probe_count,
@@ -782,7 +872,28 @@ async def candidate_refine(request: Request):
             "warnings": warnings,
         })
 
-    # ── mode: xpath ──────────────────────────���────────────────────────────────
+    selectors_before = {
+        "item_selector":      c.item_selector,
+        "title_selector":     c.title_selector,
+        "link_selector":      c.link_selector,
+        "content_selector":   c.content_selector,
+        "timestamp_selector": c.timestamp_selector,
+        "author_selector":    c.author_selector,
+        "thumbnail_selector": c.thumbnail_selector,
+    }
+
+    def _selectors_after():
+        return {
+            "item_selector":      c.item_selector,
+            "title_selector":     c.title_selector,
+            "link_selector":      c.link_selector,
+            "content_selector":   c.content_selector,
+            "timestamp_selector": c.timestamp_selector,
+            "author_selector":    c.author_selector,
+            "thumbnail_selector": c.thumbnail_selector,
+        }
+
+    # ── mode: xpath ───────────────────────────────────────────────────────────
     if mode == "xpath":
         def _merge_union(f1: str, f2: str) -> str:
             f1, f2 = (f1 or "").strip(), (f2 or "").strip()
@@ -812,8 +923,31 @@ async def candidate_refine(request: Request):
         )
         try:
             scrape = await run_scrape(req)
+            trace_store.add_action(discover_id, {
+                "kind": "candidate-refine",
+                "panel": f"xpath:{index}",
+                "mode": "xpath",
+                "provenance": {
+                    "method": "Manual XPath edit (advanced). Two-value fields merged via (A) | (B) union.",
+                },
+                "inputs": {
+                    "form": {k: v for k, v in form.multi_items() if k != "discover_id"},
+                    "selectors_before": selectors_before,
+                },
+                "outputs": {
+                    "selectors_after": _selectors_after(),
+                    "item_count": len(scrape.items),
+                    "warnings": list(scrape.warnings),
+                    "errors": list(scrape.errors),
+                },
+            })
             return _render_preview_json(scrape.items[:10], scrape.errors, scrape.warnings)
         except Exception as exc:
+            trace_store.add_action(discover_id, {
+                "kind": "candidate-refine", "panel": f"xpath:{index}", "mode": "xpath",
+                "inputs": {"selectors_before": selectors_before},
+                "error": str(exc),
+            })
             return JSONResponse({"error": f"Preview failed: {str(exc)[:200]}"}, status_code=500)
 
     # ── mode: llm ─────────────────────────────────────────────────────────────
@@ -841,6 +975,7 @@ async def candidate_refine(request: Request):
         except RuntimeError as exc:
             return JSONResponse({"error": f"Fetch failed: {str(exc)[:200]}"}, status_code=502)
 
+        llm_capture: dict = {}
         try:
             improved = await recommend_candidate_selectors(
                 url=result.url,
@@ -849,8 +984,25 @@ async def candidate_refine(request: Request):
                 llm=llm,
                 refine_examples=refine_examples or None,
                 raw_html=html,
+                capture=llm_capture,
             )
         except RuntimeError as exc:
+            trace_store.add_action(discover_id, {
+                "kind": "candidate-refine",
+                "panel": f"xpath:{index}",
+                "mode": "llm",
+                "provenance": {
+                    "method": "analyzer.recommend_candidate_selectors (LLM-only mode; may change item_selector)",
+                    "html_source": "cached browser HTML" if trace_store.get_artifact(discover_id, "browser_html") else "fresh fetch_and_parse",
+                },
+                "inputs": {
+                    "refine_examples": refine_examples,
+                    "html_bytes": len(html),
+                    "selectors_before": selectors_before,
+                },
+                "llm_call": llm_capture,
+                "error": str(exc),
+            })
             return JSONResponse({"error": str(exc)}, status_code=502)
 
         reasoning = improved.pop("reasoning", "") or ""
@@ -889,6 +1041,27 @@ async def candidate_refine(request: Request):
         items, warnings, _ = await _scrape_xpath_from_selector(req, sel, html)
         if item_sel_warning:
             warnings = [item_sel_warning] + list(warnings)
+        trace_store.add_action(discover_id, {
+            "kind": "candidate-refine",
+            "panel": f"xpath:{index}",
+            "mode": "llm",
+            "provenance": {
+                "method": "analyzer.recommend_candidate_selectors (LLM-only; may change item_selector)",
+            },
+            "inputs": {
+                "refine_examples": refine_examples,
+                "html_bytes": len(html),
+                "selectors_before": selectors_before,
+            },
+            "llm_call": llm_capture,
+            "outputs": {
+                "improved_raw": improved,
+                "reasoning": reasoning,
+                "selectors_after": _selectors_after(),
+                "item_count": len(items),
+                "warnings": list(warnings),
+            },
+        })
         resp = _render_preview_json(items[:10], [], warnings)
         # Attach reasoning to the response body.
         import json as _json
@@ -954,6 +1127,31 @@ async def candidate_refine(request: Request):
         )
         items, warnings, _ = await _scrape_xpath_from_selector(req, sel, html)
         all_warnings = list(outcome.warnings) + list(warnings)
+        trace_store.add_action(discover_id, {
+            "kind": "candidate-refine",
+            "panel": f"xpath:{index}",
+            "mode": "multi",
+            "provenance": {
+                "method": "multi_field_anchor.find_items_from_rows (deterministic LCA from example rows; no LLM)",
+            },
+            "inputs": {
+                "rows": rows,
+                "html_bytes": len(html),
+                "selectors_before": selectors_before,
+            },
+            "outputs": {
+                "lca_outcome": {
+                    "item_selector": outcome.item_selector,
+                    "field_selectors": outcome.field_selectors,
+                    "confidence": outcome.confidence,
+                    "item_count": outcome.item_count,
+                    "warnings": list(outcome.warnings),
+                },
+                "selectors_after": _selectors_after(),
+                "item_count": len(items),
+                "warnings": all_warnings,
+            },
+        })
         return _render_preview_json(items[:10], [], all_warnings)
 
     # ── mode: smart (LCA + optional LLM polish) ───────────────────────────────
@@ -1003,6 +1201,8 @@ async def candidate_refine(request: Request):
 
         reasoning = ""
         llm = _llm_config()
+        llm_capture: dict = {}
+        improved_raw: dict | None = None
         if llm is not None and outcome.item_outer_htmls:
             flat_examples = rows[0] if rows else {}
             try:
@@ -1012,7 +1212,9 @@ async def candidate_refine(request: Request):
                     item_outer_htmls=outcome.item_outer_htmls,
                     examples=flat_examples,
                     llm=llm,
+                    capture=llm_capture,
                 )
+                improved_raw = dict(improved)
                 reasoning = improved.pop("reasoning", "") or ""
                 for role in ("title", "link", "content", "timestamp", "author", "thumbnail"):
                     key = f"{role}_selector"
@@ -1042,6 +1244,38 @@ async def candidate_refine(request: Request):
         )
         items, warnings, _ = await _scrape_xpath_from_selector(req, sel, html)
         all_warnings = list(outcome.warnings) + list(warnings)
+        trace_store.add_action(discover_id, {
+            "kind": "candidate-refine",
+            "panel": f"xpath:{index}",
+            "mode": "smart",
+            "provenance": {
+                "method": (
+                    "find_items_from_rows (LCA) → analyzer.refine_with_item_samples "
+                    "(LLM polish of field selectors against real item outerHTML)."
+                ),
+            },
+            "inputs": {
+                "rows": rows,
+                "html_bytes": len(html),
+                "selectors_before": selectors_before,
+                "lca_outcome": {
+                    "item_selector": outcome.item_selector,
+                    "field_selectors": outcome.field_selectors,
+                    "confidence": outcome.confidence,
+                    "item_count": outcome.item_count,
+                    "item_outer_htmls": outcome.item_outer_htmls,
+                    "warnings": list(outcome.warnings),
+                },
+            },
+            "llm_call": llm_capture,
+            "outputs": {
+                "improved_raw": improved_raw,
+                "reasoning": reasoning,
+                "selectors_after": _selectors_after(),
+                "item_count": len(items),
+                "warnings": all_warnings,
+            },
+        })
         resp = _render_preview_json(items[:10], [], all_warnings)
         if reasoning:
             import json as _json
@@ -1098,6 +1332,25 @@ async def candidate_refine(request: Request):
             selectors=selectors, services=services, adaptive=False,
         )
         items, warnings, _ = await _scrape_xpath_from_selector(req, sel, html)
+        trace_store.add_action(discover_id, {
+            "kind": "candidate-refine",
+            "panel": f"xpath:{index}",
+            "mode": "reanchor",
+            "provenance": {
+                "method": "example_anchored.find_item_selectors_from_example (first example text used as anchor)",
+            },
+            "inputs": {
+                "anchor": anchor,
+                "html_bytes": len(html),
+                "selectors_before": selectors_before,
+            },
+            "outputs": {
+                "new_item_selectors": new_selectors,
+                "selectors_after": _selectors_after(),
+                "item_count": len(items),
+                "warnings": list(warnings),
+            },
+        })
         return _render_preview_json(items[:10], [], warnings)
 
     # ── mode: examples (default) ──────────────────────────────────────────────
@@ -1180,6 +1433,27 @@ async def candidate_refine(request: Request):
     c.thumbnail_selector = updated_sel.item_thumbnail or c.thumbnail_selector
     _persist_candidate()
 
+    trace_store.add_action(discover_id, {
+        "kind": "candidate-refine",
+        "panel": f"xpath:{index}",
+        "mode": "examples",
+        "provenance": {
+            "method": (
+                "_scrape_xpath_from_selector with per-field example text → rule_builder.recover_selector "
+                "uses fuzzy-match to replace selectors that miss. Falls back to example_anchored."
+            ),
+        },
+        "inputs": {
+            "examples": examples_lists,
+            "html_bytes": len(html),
+            "selectors_before": selectors_before,
+        },
+        "outputs": {
+            "selectors_after": _selectors_after(),
+            "item_count": len(items),
+            "warnings": list(warnings),
+        },
+    })
     return _render_preview_json(items[:10], [], warnings)
 
 
@@ -1577,9 +1851,10 @@ async def analyze(
         analysis_result = None
         probe_item_count = None
         probe_warning = None
+        llm_capture: dict = {}
         if cached_html:
             try:
-                proposal = await xpath_hunt(target_url, cached_html, html_skeleton, llm)
+                proposal = await xpath_hunt(target_url, cached_html, html_skeleton, llm, capture=llm_capture)
                 item_sel = proposal.get("item_selector") or ""
                 if item_sel:
                     probe_item_count = 0
@@ -1630,6 +1905,25 @@ async def analyze(
         else:
             analysis_result = AnalyzeResponse(url=target_url, errors=["Page HTML unavailable."])
 
+        trace_store.add_action(discover_id, {
+            "kind": "analyze",
+            "panel": "global",
+            "mode": "force_strategy=xpath",
+            "provenance": {
+                "method": "analyzer.xpath_hunt (GET /analyze?force_strategy=xpath)",
+                "html_source": "cached browser HTML" if cached_html else "fresh fetch_and_parse",
+            },
+            "inputs": {
+                "html_bytes": len(cached_html),
+                "html_skeleton_bytes": len(html_skeleton),
+            },
+            "llm_call": llm_capture,
+            "outputs": {
+                "proposal": locals().get("proposal"),
+                "probe_item_count": probe_item_count,
+                "probe_warning": probe_warning,
+            },
+        })
         return templates.TemplateResponse(
             request,
             "analyze.html",
@@ -1670,10 +1964,30 @@ async def analyze(
             llm=llm,
             discover_id=discover_id,
         )
+        llm_capture: dict = {}
         try:
-            analysis = await recommend_strategy(req)
+            analysis = await recommend_strategy(req, capture=llm_capture)
         except Exception as exc:
             analysis = AnalyzeResponse(url=target_url, errors=[f"LLM error: {exc}"])
+        trace_store.add_action(discover_id, {
+            "kind": "analyze",
+            "panel": "global",
+            "mode": "strategy-recommendation",
+            "provenance": {
+                "method": "analyzer.recommend_strategy (LLM picks between RSS/JSON/GraphQL/embedded/XPath)",
+            },
+            "inputs": {
+                "html_skeleton_bytes": len(stored.get("html_skeleton", "")),
+                "force": force,
+                "force_skip_rss": disc.results.force_skip_rss,
+            },
+            "llm_call": llm_capture,
+            "outputs": {
+                "recommendation": analysis.recommendation.model_dump() if analysis.recommendation else None,
+                "errors": list(analysis.errors or []),
+                "tokens_used": analysis.tokens_used,
+            },
+        })
 
     # ── Probe the recommendation + detect RSS-under-skip ─────────────────────
     probe_item_count = None
@@ -1786,10 +2100,30 @@ async def bridge_generate(request: Request) -> HTMLResponse:
             hint=hint,
             discover_id=discover_id,
         )
+        llm_capture: dict = {}
         try:
-            generated = await generate_bridge(req)
+            generated = await generate_bridge(req, capture=llm_capture)
         except Exception as exc:
             generated = BridgeGenerateResponse(errors=[f"Generation failed: {exc}"])
+        trace_store.add_action(discover_id, {
+            "kind": "bridge-generate",
+            "panel": "global",
+            "provenance": {
+                "method": "analyzer.generate_bridge (LLM produces an RSS-Bridge PHP class)",
+            },
+            "inputs": {
+                "hint": hint,
+                "html_skeleton_bytes": len(stored.get("html_skeleton", "")),
+            },
+            "llm_call": llm_capture,
+            "outputs": {
+                "bridge_name": generated.bridge_name,
+                "php_bytes": len(generated.php_code),
+                "sanity_warnings": list(generated.sanity_warnings),
+                "soft_warnings": list(generated.soft_warnings),
+                "errors": list(generated.errors or []),
+            },
+        })
 
     return templates.TemplateResponse(
         request,
@@ -1872,4 +2206,34 @@ async def bridge_deploy(request: Request) -> HTMLResponse:
             },
             deployed=deployed.model_dump(), hint="",
         ),
+    )
+
+
+# ── Debug / "Under the hood" transparency endpoints ──────────────────────────
+
+@router.get("/debug/discover/{discover_id}")
+async def debug_discover_bundle(discover_id: str):
+    """Return the full trace bundle for a discovery: provenance + LLM prompts
+    + per-action inputs/outputs. Used by the UI's 'Under the hood' panels."""
+    bundle = trace_store.get_bundle(discover_id)
+    if bundle is None:
+        return JSONResponse({"error": "No trace recorded for this discover_id."}, status_code=404)
+    return JSONResponse(bundle)
+
+
+@router.get("/debug/discover/{discover_id}/artifact/{kind}")
+async def debug_discover_artifact(discover_id: str, kind: str):
+    """Serve a full HTML/text artifact (raw_html, browser_html, pruned_html,
+    html_skeleton, …). Always served inline as text/plain with the correct
+    Content-Disposition so the browser offers it as a download.
+    """
+    art = trace_store.get_artifact(discover_id, kind)
+    if art is None:
+        return JSONResponse({"error": f"No artifact '{kind}' for this discover_id."}, status_code=404)
+    safe_kind = "".join(ch for ch in kind if ch.isalnum() or ch in "_-.") or "artifact"
+    filename = f"{discover_id}_{safe_kind}.html"
+    return PlainTextResponse(
+        content=art.get("content", ""),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

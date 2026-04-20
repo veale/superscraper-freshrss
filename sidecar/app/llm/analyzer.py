@@ -31,7 +31,9 @@ def should_invoke_llm(results: DiscoveryResults) -> tuple[bool, str]:
     return True, ""
 
 
-async def recommend_strategy(req: AnalyzeRequest) -> AnalyzeResponse:
+async def recommend_strategy(
+    req: AnalyzeRequest, capture: dict | None = None,
+) -> AnalyzeResponse:
     """Call the LLM to pick the best feed strategy, return structured response."""
     client = LLMClient(
         endpoint=req.llm.endpoint,
@@ -42,7 +44,7 @@ async def recommend_strategy(req: AnalyzeRequest) -> AnalyzeResponse:
     system, user = render_strategy_prompt(req)
 
     try:
-        result = await client.chat_completion(system, user)
+        result = await client.chat_completion(system, user, capture=capture)
     except LLMTimeout as exc:
         return AnalyzeResponse(url=req.url, errors=[f"LLM timeout: {exc}"])
     except LLMAuth as exc:
@@ -102,6 +104,7 @@ async def recommend_candidate_selectors(
     llm,
     refine_examples: dict[str, list[str]] | None = None,
     raw_html: str = "",
+    capture: dict | None = None,
 ) -> dict:
     """Ask the LLM to improve one XPath candidate's selectors, including item_selector.
 
@@ -235,7 +238,7 @@ async def recommend_candidate_selectors(
     user = "\n".join(parts)
 
     try:
-        result = await client.chat_completion(system, user)
+        result = await client.chat_completion(system, user, capture=capture)
     except (LLMTimeout, LLMAuth, LLMMalformed, LLMError) as exc:
         raise RuntimeError(f"LLM error: {exc}") from exc
 
@@ -256,6 +259,7 @@ async def refine_with_item_samples(
     item_outer_htmls: list[str],
     examples: dict[str, str],
     llm,
+    capture: dict | None = None,
 ) -> dict:
     """Ask the LLM to polish field selectors given actual item outerHTML samples.
 
@@ -324,7 +328,7 @@ async def refine_with_item_samples(
     user = "\n".join(parts)
 
     try:
-        result = await client.chat_completion(system, user)
+        result = await client.chat_completion(system, user, capture=capture)
     except (LLMTimeout, LLMAuth, LLMMalformed, LLMError) as exc:
         raise RuntimeError(f"LLM error: {exc}") from exc
 
@@ -343,6 +347,7 @@ async def xpath_hunt(
     html: str,
     html_skeleton: str,
     llm,
+    capture: dict | None = None,
 ) -> dict:
     """Ask the LLM to propose XPath selectors by searching the page for repeating items.
 
@@ -421,7 +426,7 @@ async def xpath_hunt(
     ]
 
     try:
-        result = await client.chat_completion(system, "\n".join(user_parts))
+        result = await client.chat_completion(system, "\n".join(user_parts), capture=capture)
     except (LLMTimeout, LLMAuth, LLMMalformed, LLMError) as exc:
         raise RuntimeError(f"LLM error: {exc}") from exc
 
@@ -436,7 +441,9 @@ async def xpath_hunt(
     return selectors
 
 
-async def generate_bridge(req: BridgeGenerateRequest) -> BridgeGenerateResponse:
+async def generate_bridge(
+    req: BridgeGenerateRequest, capture: dict | None = None,
+) -> BridgeGenerateResponse:
     """Call the LLM to generate an RSS-Bridge PHP script."""
     client = LLMClient(
         endpoint=req.llm.endpoint,
@@ -447,7 +454,7 @@ async def generate_bridge(req: BridgeGenerateRequest) -> BridgeGenerateResponse:
     system, user = render_bridge_prompt(req)
 
     try:
-        result = await client.chat_completion(system, user)
+        result = await client.chat_completion(system, user, capture=capture)
     except LLMTimeout as exc:
         return BridgeGenerateResponse(errors=[f"LLM timeout: {exc}"])
     except LLMAuth as exc:

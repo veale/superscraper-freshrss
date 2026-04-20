@@ -111,6 +111,10 @@
     </details>
   </div>
 
+  {% with uth_panel="xpath:" ~ e.index, uth_hint="XPath candidate #" ~ e.index %}
+    {% include "partials/_uth_panel.html" %}
+  {% endwith %}
+
   {# Per-candidate refine panel #}
   <div class="refine-panel" id="refine-panel-xpath-{{ e.index }}" hidden>
     <div class="refine-panel-header">

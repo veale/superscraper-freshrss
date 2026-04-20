@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initCandidateRefine();
   initBackendStealthDisable();
   initLlmXpathHunt();
+  initUnderTheHood();
 });
 
 // Fill the URL input when an example link is clicked
@@ -286,6 +287,8 @@ function initGlobalRefineForm() {
       const details = form.closest('details');
       if (details) details.removeAttribute('open');
 
+      document.dispatchEvent(new CustomEvent('uth:trace-dirty'));
+
     } catch (err) {
       console.error('Global refine error:', err);
       // Rollback: tell user, leave previews in unknown state
@@ -442,6 +445,8 @@ function initCandidateRefine() {
       const panel = document.getElementById(`refine-panel-xpath-${index}`);
       if (panel) panel.hidden = true;
 
+      document.dispatchEvent(new CustomEvent('uth:trace-dirty'));
+
     } catch (err) {
       console.error('Candidate refine error:', err);
       if (previewTarget) {
@@ -469,6 +474,426 @@ function initBackendStealthDisable() {
     cb.disabled = !stealthy;
     if (!stealthy) cb.checked = false;
   });
+}
+
+/* ── Under the hood (UTH) transparency panels ────────────────────────────── */
+
+const UTH = {
+  cache: new Map(),   // discover_id -> bundle
+  inflight: new Map(),
+};
+
+function initUnderTheHood() {
+  const panels = document.querySelectorAll('details.under-the-hood[data-uth]');
+  if (panels.length === 0) return;
+
+  panels.forEach(panel => {
+    panel.addEventListener('toggle', () => {
+      if (panel.open) renderUthPanel(panel);
+    });
+  });
+
+  // After any refine/LLM/analyze action completes on this page, the trace
+  // has changed — mark all panels stale so the next open re-fetches.
+  document.addEventListener('uth:trace-dirty', () => {
+    UTH.cache.clear();
+    document.querySelectorAll('details.under-the-hood[data-uth]').forEach(p => {
+      p.dataset.uthLoaded = '';
+      if (p.open) renderUthPanel(p);
+    });
+  });
+}
+
+async function renderUthPanel(panel) {
+  const discoverId = panel.dataset.discoverId;
+  const panelKey = panel.dataset.panel;
+  const body = panel.querySelector('[data-uth-body]');
+  if (!body || !discoverId) return;
+
+  body.innerHTML = '<p class="uth-placeholder text-tertiary">Loading trace…</p>';
+
+  let bundle;
+  try {
+    bundle = await fetchUthBundle(discoverId);
+  } catch (err) {
+    body.innerHTML = `<div class="uth-error">Failed to load trace: ${escapeHtml(err.message)}</div>`;
+    return;
+  }
+  if (!bundle) {
+    body.innerHTML = '<p class="uth-placeholder text-tertiary">No trace recorded for this discovery.</p>';
+    return;
+  }
+
+  body.innerHTML = '';
+  body.append(renderUthHeader(bundle, panelKey, discoverId));
+
+  if (panelKey === 'discovery') {
+    body.append(renderDiscoverySections(bundle, discoverId));
+  }
+
+  body.append(renderActionsForPanel(bundle, panelKey));
+
+  panel.dataset.uthLoaded = '1';
+}
+
+async function fetchUthBundle(discoverId) {
+  if (UTH.cache.has(discoverId)) return UTH.cache.get(discoverId);
+  if (UTH.inflight.has(discoverId)) return UTH.inflight.get(discoverId);
+
+  const p = fetch(`/debug/discover/${encodeURIComponent(discoverId)}`)
+    .then(r => {
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    })
+    .then(data => {
+      UTH.cache.set(discoverId, data);
+      UTH.inflight.delete(discoverId);
+      return data;
+    })
+    .catch(err => {
+      UTH.inflight.delete(discoverId);
+      throw err;
+    });
+
+  UTH.inflight.set(discoverId, p);
+  return p;
+}
+
+function renderUthHeader(bundle, panelKey, discoverId) {
+  const wrap = document.createElement('div');
+  wrap.className = 'uth-section';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'uth-section-header';
+  hdr.innerHTML = `
+    <span class="uth-kind">Panel</span>
+    <span class="uth-meta">${escapeHtml(panelKey)}</span>
+    <span class="uth-meta">· discover_id=${escapeHtml(discoverId)}</span>
+    <span class="uth-meta">· ${Object.keys(bundle.artifacts || {}).length} artifact(s), ${bundle.actions?.length || 0} action(s)</span>
+  `;
+
+  const refreshBtn = document.createElement('button');
+  refreshBtn.type = 'button';
+  refreshBtn.className = 'btn btn-sm btn-secondary uth-refresh-btn';
+  refreshBtn.textContent = 'Refresh';
+  refreshBtn.style.marginLeft = 'auto';
+  refreshBtn.addEventListener('click', e => {
+    e.preventDefault();
+    UTH.cache.delete(discoverId);
+    const panel = refreshBtn.closest('details.under-the-hood');
+    if (panel) renderUthPanel(panel);
+  });
+  hdr.append(refreshBtn);
+
+  wrap.append(hdr);
+  return wrap;
+}
+
+function renderDiscoverySections(bundle, discoverId) {
+  const frag = document.createDocumentFragment();
+  const discovery = bundle.discovery || {};
+  const artifacts = bundle.artifacts || {};
+
+  // Fetch info
+  if (discovery.fetch) {
+    frag.append(uthSection('Fetch', null, body => {
+      body.append(uthField('Request', jsonBlock(discovery.fetch)));
+    }));
+  }
+
+  // Artifacts (HTML blobs + downloads)
+  const artKeys = Object.keys(artifacts);
+  if (artKeys.length) {
+    frag.append(uthSection('HTML artifacts', null, body => {
+      for (const kind of artKeys) {
+        const meta = artifacts[kind] || {};
+        const row = document.createElement('div');
+        row.className = 'uth-artifact-row';
+        const sizeKb = (meta.size || 0) / 1024;
+        row.innerHTML = `
+          <span class="uth-artifact-name">${escapeHtml(kind)}</span>
+          <span class="uth-artifact-size">${sizeKb.toFixed(1)} KB${meta.truncated ? ' (truncated)' : ''}</span>
+        `;
+        const link = document.createElement('a');
+        link.href = `/debug/discover/${encodeURIComponent(discoverId)}/artifact/${encodeURIComponent(kind)}`;
+        link.textContent = 'Download full';
+        link.className = 'uth-download text-secondary';
+        link.target = '_blank';
+        link.rel = 'noopener';
+        row.append(link);
+
+        const viewBtn = document.createElement('button');
+        viewBtn.type = 'button';
+        viewBtn.className = 'btn btn-sm btn-link';
+        viewBtn.textContent = 'View';
+        viewBtn.style.padding = '0 var(--space-2)';
+        const viewHolder = document.createElement('div');
+        viewHolder.style.width = '100%';
+        viewBtn.addEventListener('click', async () => {
+          if (viewHolder.dataset.loaded) {
+            viewHolder.style.display = viewHolder.style.display === 'none' ? '' : 'none';
+            return;
+          }
+          viewBtn.disabled = true;
+          viewBtn.textContent = 'Loading…';
+          try {
+            const resp = await fetch(link.href);
+            const text = await resp.text();
+            const pre = document.createElement('pre');
+            pre.className = 'uth-code uth-code--wide';
+            pre.innerHTML = highlightHtml(text);
+            viewHolder.append(pre);
+            viewHolder.dataset.loaded = '1';
+            viewBtn.textContent = 'Hide';
+            viewBtn.disabled = false;
+          } catch (err) {
+            viewHolder.innerHTML = `<div class="uth-error">Failed: ${escapeHtml(err.message)}</div>`;
+            viewBtn.textContent = 'View';
+            viewBtn.disabled = false;
+          }
+        });
+        row.append(viewBtn);
+
+        body.append(row);
+        body.append(viewHolder);
+      }
+    }));
+  }
+
+  // Steps (rss, embedded_json, api_static, prune, xpath_heuristic, browser_fetch, graphql, xpath_scrapling, initial_examples, skeleton)
+  if (discovery.steps && Object.keys(discovery.steps).length) {
+    frag.append(uthSection('Pipeline steps', null, body => {
+      for (const [name, data] of Object.entries(discovery.steps)) {
+        body.append(uthField(name, jsonBlock(data)));
+      }
+    }));
+  }
+
+  if (discovery.decision) {
+    frag.append(uthSection('Decision', null, body => {
+      body.append(uthField('Signals', jsonBlock(discovery.decision)));
+    }));
+  }
+
+  return frag;
+}
+
+function renderActionsForPanel(bundle, panelKey) {
+  const actions = (bundle.actions || []).filter(a => a.panel === panelKey);
+
+  const section = uthSection(
+    panelKey === 'discovery' ? 'Actions on this discovery' : 'Actions on this panel',
+    actions.length ? `${actions.length} recorded` : null,
+    body => {
+      if (actions.length === 0) {
+        body.innerHTML = '<p class="uth-action-empty">No actions recorded yet. Run a refine, preview, or LLM step and refresh.</p>';
+        return;
+      }
+      const list = document.createElement('div');
+      list.className = 'uth-actions-list';
+      actions.slice().reverse().forEach(a => list.append(renderAction(a)));
+      body.append(list);
+    }
+  );
+  return section;
+}
+
+function renderAction(action) {
+  const card = document.createElement('div');
+  card.className = 'uth-section';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'uth-section-header';
+  const when = action.timestamp
+    ? new Date(action.timestamp * 1000).toLocaleTimeString()
+    : '';
+  const pills = [];
+  if (action.kind) pills.push(action.kind);
+  if (action.mode) pills.push(`mode:${action.mode}`);
+  if (action.error) pills.push('error');
+  hdr.innerHTML = `
+    <span class="uth-kind">${escapeHtml(action.kind || 'action')}</span>
+    ${action.mode ? `<span class="uth-pill">${escapeHtml(action.mode)}</span>` : ''}
+    ${action.error ? `<span class="uth-pill" style="background:var(--error);color:var(--accent-fg);border-color:var(--error);">error</span>` : ''}
+    <span class="uth-meta">${escapeHtml(when)}</span>
+    <span class="uth-meta">· ${escapeHtml(action.action_id || '')}</span>
+  `;
+  card.append(hdr);
+
+  const body = document.createElement('div');
+  body.className = 'uth-section-body';
+
+  if (action.provenance) {
+    body.append(uthField('Provenance', jsonBlock(action.provenance)));
+  }
+  if (action.inputs) {
+    body.append(uthField('Inputs', jsonBlock(action.inputs)));
+  }
+  if (action.llm_call) {
+    body.append(renderLlmCall(action.llm_call));
+  }
+  if (action.outputs) {
+    body.append(uthField('Outputs', jsonBlock(action.outputs)));
+  }
+  if (action.error) {
+    const err = document.createElement('div');
+    err.className = 'uth-error';
+    err.textContent = action.error;
+    body.append(err);
+  }
+
+  card.append(body);
+  return card;
+}
+
+function renderLlmCall(llm) {
+  const wrap = document.createElement('div');
+  wrap.className = 'uth-field';
+
+  const label = document.createElement('div');
+  label.className = 'uth-field-label';
+  const modelBit = llm.model ? ` · ${escapeHtml(llm.model)}` : '';
+  const tokBit = llm.tokens_used != null ? ` · ${llm.tokens_used} tokens` : '';
+  label.innerHTML = `LLM call${modelBit}${tokBit}`;
+  wrap.append(label);
+
+  if (llm.system) {
+    wrap.append(uthSubField('System prompt', textBlock(llm.system)));
+  }
+  if (llm.user) {
+    wrap.append(uthSubField('User prompt', textBlock(llm.user)));
+  }
+  if (llm.raw_content) {
+    const pre = document.createElement('pre');
+    pre.className = 'uth-code';
+    pre.innerHTML = highlightJson(tryPrettyJson(llm.raw_content));
+    wrap.append(uthSubField('Response', pre));
+  }
+  if (llm.error) {
+    const err = document.createElement('div');
+    err.className = 'uth-error';
+    err.textContent = llm.error;
+    wrap.append(err);
+  }
+  return wrap;
+}
+
+function uthSection(title, meta, buildBody) {
+  const section = document.createElement('div');
+  section.className = 'uth-section';
+  const hdr = document.createElement('div');
+  hdr.className = 'uth-section-header';
+  hdr.innerHTML = `<span class="uth-kind">${escapeHtml(title)}</span>${meta ? ` <span class="uth-meta">${escapeHtml(meta)}</span>` : ''}`;
+  const body = document.createElement('div');
+  body.className = 'uth-section-body';
+  if (buildBody) buildBody(body);
+  section.append(hdr, body);
+  return section;
+}
+
+function uthField(label, content) {
+  const wrap = document.createElement('div');
+  wrap.className = 'uth-field';
+  const lbl = document.createElement('div');
+  lbl.className = 'uth-field-label';
+  lbl.textContent = label;
+  wrap.append(lbl);
+  if (content instanceof Node) wrap.append(content);
+  else {
+    const pre = document.createElement('pre');
+    pre.className = 'uth-code';
+    pre.textContent = String(content);
+    wrap.append(pre);
+  }
+  return wrap;
+}
+
+function uthSubField(label, content) {
+  return uthField(label, content);
+}
+
+function jsonBlock(value) {
+  const pre = document.createElement('pre');
+  pre.className = 'uth-code';
+  pre.innerHTML = highlightJson(safeStringify(value));
+  return pre;
+}
+
+function textBlock(value) {
+  const pre = document.createElement('pre');
+  pre.className = 'uth-code';
+  pre.textContent = String(value ?? '');
+  return pre;
+}
+
+function safeStringify(value) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function tryPrettyJson(raw) {
+  if (typeof raw !== 'string') return safeStringify(raw);
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+/* Minimal, dependency-free syntax highlighter. Tokenizes JSON and HTML;
+   XPath values are left as monospace since no single highlight scheme fits
+   every context they appear in.  */
+
+function highlightJson(src) {
+  if (typeof src !== 'string') src = String(src);
+  const safe = escapeHtml(src);
+  return safe
+    // strings (including keys — key detection done after)
+    .replace(/"(?:\\.|[^"\\])*"(?=\s*:)/g, m => `<span class="tok-key">${m}</span>`)
+    .replace(/"(?:\\.|[^"\\])*"/g, m =>
+      m.includes('class="tok-') ? m : `<span class="tok-string">${m}</span>`
+    )
+    .replace(/\b(true|false|null)\b/g, '<span class="tok-bool">$1</span>')
+    .replace(/(?<![\w"])-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g, '<span class="tok-num">$&</span>');
+}
+
+function highlightHtml(src) {
+  if (typeof src !== 'string') src = String(src);
+  const parts = [];
+  let i = 0;
+  const tagRe = /<(!--[\s\S]*?--|\/?[a-zA-Z][\w:-]*[^<>]*?\/?)>/g;
+  let m;
+  while ((m = tagRe.exec(src)) !== null) {
+    if (m.index > i) parts.push(escapeHtml(src.slice(i, m.index)));
+    const inner = m[1];
+    if (inner.startsWith('!--')) {
+      parts.push(`<span class="tok-comment">${escapeHtml('<' + inner + '>')}</span>`);
+    } else {
+      parts.push(highlightHtmlTag(inner));
+    }
+    i = m.index + m[0].length;
+  }
+  if (i < src.length) parts.push(escapeHtml(src.slice(i)));
+  return parts.join('');
+}
+
+function highlightHtmlTag(inner) {
+  const slash = inner.startsWith('/') ? '/' : '';
+  let body = slash ? inner.slice(1) : inner;
+  const selfClose = body.endsWith('/');
+  if (selfClose) body = body.slice(0, -1);
+  const nameMatch = body.match(/^([a-zA-Z][\w:-]*)/);
+  const name = nameMatch ? nameMatch[1] : '';
+  const attrs = nameMatch ? body.slice(name.length) : body;
+  const attrsHtml = attrs.replace(
+    /([a-zA-Z_:][\w:.-]*)(\s*=\s*)("[^"]*"|'[^']*'|[^\s"'>]+)/g,
+    (_, n, eq, v) => ` <span class="tok-attr">${escapeHtml(n)}</span>${escapeHtml(eq)}<span class="tok-string">${escapeHtml(v)}</span>`
+  );
+  return `<span class="tok-punc">&lt;${slash}</span><span class="tok-tag">${escapeHtml(name)}</span>${attrsHtml}<span class="tok-punc">${selfClose ? '/' : ''}&gt;</span>`;
 }
 
 // "Ask LLM to find XPath" button on discover results page
