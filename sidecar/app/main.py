@@ -546,8 +546,15 @@ async def scrape_config_delete(config_id: str) -> None:
 
 
 @app.get("/scrape/feed")
-async def scrape_feed(id: str) -> Response:
-    """Serve a saved feed's Atom XML, using the cache when available."""
+async def scrape_feed(id: str, debug: int = 0, refresh: int = 0) -> Response:
+    """Serve a saved feed's Atom XML, using the cache when available.
+
+    Query params:
+      debug=1   → return JSON with items + warnings/errors instead of Atom.
+                  Use when the feed looks empty — surfaces the silent
+                  "selector matched 0 elements" warnings that /scrape swallows.
+      refresh=1 → skip the cache and re-scrape live.
+    """
     from app.ui.feeds_store import get_feeds_store
     from app.scheduler.runner import _ATOM_CACHE_DIR
 
@@ -559,6 +566,28 @@ async def scrape_feed(id: str) -> Response:
             feed = f
             break
 
+    if debug:
+        cfg = load_config("scrape", id)
+        if cfg is None:
+            raise HTTPException(status_code=404, detail="Config not found")
+        req = ScrapeRequest.model_validate(cfg)
+        result = await run_scrape(req)
+        from fastapi.responses import JSONResponse
+        return JSONResponse({
+            "config_id": id,
+            "url": result.url,
+            "strategy": result.strategy,
+            "fetch_backend_used": result.fetch_backend_used,
+            "item_count": result.item_count,
+            "cache_hit": result.cache_hit,
+            "drift_detected": result.drift_detected,
+            "errors": result.errors,
+            "warnings": result.warnings,
+            "items": [i.model_dump() for i in result.items[:5]],
+            "selectors": req.selectors.model_dump(),
+            "services": req.services.model_dump(),
+        })
+
     if feed is None:
         # Fallback: look up directly by config_id — no feed record yet (API call)
         cfg = load_config("scrape", id)
@@ -569,10 +598,17 @@ async def scrape_feed(id: str) -> Response:
         atom = _build_atom(result, feed_id=id)
         return Response(content=atom, media_type="application/atom+xml")
 
-    # Try serving cached atom.
+    # Try serving cached atom — unless empty or refresh forced.
     atom_path = Path(feed.get("cached_atom_path", "") or _ATOM_CACHE_DIR / f"{feed['id']}.atom")
-    if atom_path.exists():
-        return Response(content=atom_path.read_bytes(), media_type="application/atom+xml")
+    if not refresh and atom_path.exists():
+        cached = atom_path.read_bytes()
+        # A cached feed with no <entry> elements usually means the first live
+        # scrape returned 0 items. Re-scrape rather than serve the stale empty
+        # feed indefinitely — the underlying cause (JS-rendered page hit by
+        # httpx, anti-bot, drifted selector) may have cleared or the user may
+        # have fixed the config.
+        if b"<entry" in cached:
+            return Response(content=cached, media_type="application/atom+xml")
 
     # No cache yet — live scrape, persist, return.
     cfg = load_config("scrape", id)
