@@ -134,7 +134,8 @@
       "Bash(python -m pytest)",
       "Bash(python -c \"from app.ui.router import router; from app.llm.analyzer import debug_recipe; from app.llm.prompts import render_debug_recipe_prompt; from app.scraping.config_store import update_config; print\\('imports OK'\\)\")",
       "Bash(python -m pytest tests/test_debug_recipe.py tests/test_har_ingest.py tests/test_embedded_json_round2.py -v)",
-      "Bash(python -m pytest tests/test_prompts.py tests/test_analyzer.py tests/test_llm_client.py tests/test_scrape_config.py)"
+      "Bash(python -m pytest tests/test_prompts.py tests/test_analyzer.py tests/test_llm_client.py tests/test_scrape_config.py)",
+      "Bash(python -m pytest tests/test_scrape_config.py tests/test_scrape_endpoint.py tests/test_fetch_dispatcher.py)"
     ],
     "additionalDirectories": [
       "/tmp",

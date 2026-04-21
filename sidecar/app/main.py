@@ -706,7 +706,7 @@ async def scrape_feed(id: str, debug: int = 0, refresh: int = 0) -> Response:
     cfg = load_config("scrape", id)
     if cfg is None:
         raise HTTPException(status_code=404, detail="Config not found")
-    req = ScrapeRequest.model_validate(cfg)
+    req = ScrapeRequest.model_validate(_apply_override(cfg))
     result = await run_scrape(req)
     atom = _build_atom(result, feed_id=id)
 
