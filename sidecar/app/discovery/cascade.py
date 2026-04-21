@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from app.discovery.date_anchor import anchor_via_dates
 from app.discovery.embedded_json import detect_embedded_json
 from app.discovery.rss_autodiscovery import discover_rss
 from app.discovery.scoring import score_feed_likeness
@@ -304,6 +305,27 @@ async def run_discovery(
         except Exception as exc:
             errors.append(f"Scrapling selector generation error: {exc}")
             _t("steps.xpath_scrapling", {"method": "scrapling auto-selector generation", "error": str(exc)})
+
+    # ── Step 5.4: Date-anchor heuristic ───────────────────────────────────────
+    # Dates are the least ambiguous item cue (titles/links recur in nav, ads,
+    # related-posts; dates rarely do). Scan the page for date text + <time>
+    # elements, cluster by lowest repeating ancestor, validate sibling shape.
+    try:
+        date_anchor_html = browser_html or pruned_html or html
+        date_candidate = anchor_via_dates(date_anchor_html)
+    except Exception as exc:
+        date_candidate = None
+        errors.append(f"Date-anchor error: {exc}")
+    _t("steps.date_anchor", {
+        "method": "date_anchor.anchor_via_dates (walk-up from dated nodes, validate sibling shape)",
+        "outcome": {
+            "item_selector": date_candidate.item_selector if date_candidate else None,
+            "item_count": date_candidate.item_count if date_candidate else 0,
+            "confidence": date_candidate.confidence if date_candidate else None,
+        } if date_candidate else None,
+    })
+    if date_candidate is not None:
+        xpath_candidates = _merge_xpath_candidates([date_candidate], xpath_candidates)
 
     # ── Step 5.5: Initial-examples anchor (LCA-based, cross-family union) ─────
     if req.initial_examples:

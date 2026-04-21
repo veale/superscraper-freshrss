@@ -115,7 +115,11 @@
       "Bash(python -m pytest tests/test_selector_generation.py tests/test_scrapling_selectors.py tests/test_mixed_blocks_xpath.py tests/test_discovery_cascade.py)",
       "Bash(python -m pytest tests/test_selector_generation.py tests/test_scrapling_selectors.py tests/test_mixed_blocks_xpath.py)",
       "Bash(python -m pytest tests/test_scrape.py tests/test_scrape_extraction.py tests/test_xpath_scrape.py)",
-      "Bash(python -m pytest tests/ -q --ignore=tests/test_bridge_contract.py --ignore=tests/test_bridge_flow.py --ignore=tests/test_inbound_auth.py)"
+      "Bash(python -m pytest tests/ -q --ignore=tests/test_bridge_contract.py --ignore=tests/test_bridge_flow.py --ignore=tests/test_inbound_auth.py)",
+      "Bash(python3 -c \"from scrapling import Selector; s=Selector\\('<div><a href=x><span>Hello</span></a></div>'\\); r=s.xpath\\('//a'\\); v=r[0]; print\\(type\\(v\\), hasattr\\(v,'text_content'\\), hasattr\\(v,'text'\\)\\); print\\('TC=',repr\\(v.text_content\\(\\)\\) if hasattr\\(v,'text_content'\\) else 'N/A'\\); print\\('TX=',repr\\(v.text\\)\\); print\\('STR=',repr\\(str\\(v\\)\\)[:80]\\)\")",
+      "Bash(python3 -m pytest tests/test_refinement_pipeline.py -x -q)",
+      "Bash(python3 -m pytest tests/test_date_anchor.py -x -q)",
+      "Bash(python3 -m pytest tests/test_cascade_phase1.py tests/test_cascade_phase2.py -x -q)"
     ],
     "additionalDirectories": [
       "/tmp",

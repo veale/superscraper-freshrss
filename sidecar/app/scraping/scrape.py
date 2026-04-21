@@ -676,11 +676,12 @@ def _map_element(el: Any, selectors: ScrapeSelectors, base_url: str) -> ScrapeIt
             if not r:
                 return ""
             v = r[0]
-            # For lxml elements, prefer text_content() over .text so titles
-            # wrapped in inline children (<a><span>Title</span></a>) survive.
-            # .text only returns the element's *direct* text up to the first
-            # child, which is empty for span-wrapped titles — that's what
-            # left the title column blank after a correct LLM refinement.
+            # scrapling Selector wraps an lxml element and exposes
+            # get_all_text(); plain `.text` returns direct text only and is
+            # empty for span-wrapped titles. str(Selector) dumps outerHTML —
+            # that's what filled the preview cells with raw <a …> markup.
+            if hasattr(v, "get_all_text"):
+                return v.get_all_text()
             if hasattr(v, "text_content"):
                 return v.text_content()
             return str(v)
