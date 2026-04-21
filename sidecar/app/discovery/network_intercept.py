@@ -108,6 +108,12 @@ async def _run_capture(
             except Exception:
                 pass
 
+            req_headers: dict[str, str] = {}
+            try:
+                req_headers = dict(response.request.headers)
+            except Exception:
+                pass
+
             captured.append(
                 {
                     "url": resp_url,
@@ -116,6 +122,7 @@ async def _run_capture(
                     "content_type": ct.split(";")[0].strip(),
                     "body": body,
                     "request_post_data": post_data,
+                    "request_headers": req_headers,
                 }
             )
         except Exception:

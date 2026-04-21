@@ -15,6 +15,8 @@ from app.discovery.scoring import score_feed_likeness
 from app.discovery.scrapling_selectors import generate_selectors_with_scrapling
 from app.discovery.selector_generation import generate_xpath_candidates
 from app.discovery.static_js_analysis import extract_api_urls
+from app.discovery.api_replay import detect_pagination, filter_replay_headers
+from app.discovery.scoring import find_best_array_path
 from app.services.fetch import fetch_with_capture
 from app.utils.skeleton import build_skeleton
 from app.utils.tree_pruning import build_pruned_html
@@ -240,13 +242,25 @@ async def run_discovery(
                 "network_urls": [r.get("url", "") for r in network_responses[:20]],
             })
             for resp_data in network_responses:
-                sc = score_feed_likeness(resp_data["body"])
+                body = resp_data["body"]
+                sc = score_feed_likeness(body)
                 if sc >= 0.15:
-                    items = _first_items(resp_data["body"])
+                    array_paths = find_best_array_path(body)
+                    if array_paths:
+                        best_path, items, _ = array_paths[0]
+                    else:
+                        best_path, items = "", _first_items(body)
                     sample_keys = (
                         sorted({k for item in items[:5] for k in item.keys()})[:15]
                         if items
                         else []
+                    )
+                    sample_item = items[0] if items else None
+                    raw_req_headers = resp_data.get("request_headers") or {}
+                    pagination = detect_pagination(
+                        resp_data.get("request_post_data") or "",
+                        resp_data["url"],
+                        body,
                     )
                     api_endpoints.append(
                         APIEndpoint(
@@ -255,8 +269,13 @@ async def run_discovery(
                             content_type=resp_data["content_type"],
                             item_count=len(items),
                             sample_keys=sample_keys,
+                            sample_item=sample_item,
                             feed_score=sc,
                             field_mapping=auto_map_fields(sample_keys),
+                            item_path=best_path,
+                            request_body=resp_data.get("request_post_data") or "",
+                            request_headers=filter_replay_headers(raw_req_headers, resp_data["url"]),
+                            pagination=pagination,
                         )
                     )
             # Re-sort by score.

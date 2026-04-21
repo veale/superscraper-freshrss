@@ -68,6 +68,26 @@ class RSSFeed(BaseModel):
     parse_error: str = ""
 
 
+class PaginationSpec(BaseModel):
+    """How to paginate an API endpoint during replay.
+
+    *location* says whether the paginator lives in the request body (JSON) or
+    the URL query string. *kind* picks the step semantics: 'page' increments
+    by one, 'offset' advances by *per_page*, 'cursor' uses the value read from
+    *next_cursor_path* in the previous response.
+    """
+
+    location: str = "body"       # body | query
+    param: str = ""              # e.g. pageNumber | page | offset | cursor
+    kind: str = "page"           # page | offset | cursor
+    start: int = 1               # first page/offset to request (cursors ignore this)
+    per_page: int = 0            # page size when known (for offset pagination)
+    per_page_param: str = ""     # if the API exposes a page-size param
+    has_more_path: str = ""      # dot-path in response that yields a truthy "more" flag
+    next_cursor_path: str = ""   # dot-path to next-cursor value
+    total_pages_path: str = ""   # dot-path to total pages (stop when reached)
+
+
 class APIEndpoint(BaseModel):
     url: str
     method: str = "GET"
@@ -78,6 +98,9 @@ class APIEndpoint(BaseModel):
     feed_score: float = 0.0
     field_mapping: dict[str, str] = Field(default_factory=dict)
     item_path: str = ""
+    request_body: str = ""        # raw request body as captured (usually JSON text)
+    request_headers: dict[str, str] = Field(default_factory=dict)
+    pagination: Optional[PaginationSpec] = None
 
 
 class EmbeddedJSON(BaseModel):
@@ -301,9 +324,14 @@ class ScrapeRequest(BaseModel):
     timeout: int = Field(30, ge=5, le=120)
     adaptive: bool = True
     cache_key: str = ""
-    max_pages: int = Field(1, ge=1, le=10)  # Phase 5 — ignored for now
+    max_pages: int = Field(1, ge=1, le=50)
+    max_items: int = Field(250, ge=1, le=5000)
     stealth: bool = False
     solve_cloudflare: bool = False
+    method: str = "GET"
+    request_body: str = ""
+    request_headers: dict[str, str] = Field(default_factory=dict)
+    pagination: Optional[PaginationSpec] = None
 
 
 class ScrapeItem(BaseModel):

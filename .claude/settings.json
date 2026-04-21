@@ -124,7 +124,11 @@
       "Bash(python3 -c \"from app.main import app; print\\('ok'\\)\")",
       "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 Chrome/124.0 Safari/537.36\" \"https://www.heise.de/en/AI\" -o /tmp/heise.html)",
       "Bash(python3 -c \"from app.main import app; from app.ui.router import router; print\\('routes ok'\\)\")",
-      "Bash(python3 -m pytest tests/test_scheduler_runner.py tests/test_scrape_endpoint.py -x -q)"
+      "Bash(python3 -m pytest tests/test_scheduler_runner.py tests/test_scrape_endpoint.py -x -q)",
+      "Bash(python -m pytest tests/ -x -q --no-header)",
+      "Bash(python -m pytest tests/test_bridge_contract.py::test_bridge_generate_to_deploy_flow -x -q --no-header)",
+      "Bash(python -m pytest tests/ -q --no-header --deselect tests/test_bridge_contract.py::test_bridge_generate_to_deploy_flow)",
+      "Bash(python -m pytest tests/test_mixed_blocks_xpath.py tests/test_refinement_pipeline.py::test_llm_xpath_hunt_prompt_contains_preserved_text tests/test_inbound_auth.py::test_bridge_deploy_needs_token -q --no-header)"
     ],
     "additionalDirectories": [
       "/tmp",

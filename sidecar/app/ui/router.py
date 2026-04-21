@@ -247,8 +247,23 @@ async def preview_fragment(
             if index >= len(res.api_endpoints):
                 return _err("Index out of range.")
             c = res.api_endpoints[index]
+            fm = c.field_mapping or {}
             req = ScrapeRequest(
                 url=c.url, strategy=FeedStrategy.JSON_API,
+                selectors=ScrapeSelectors(
+                    item=c.item_path,
+                    item_title=fm.get("title", ""),
+                    item_link=fm.get("link", ""),
+                    item_content=fm.get("content", ""),
+                    item_timestamp=fm.get("timestamp", ""),
+                    item_author=fm.get("author", ""),
+                    item_thumbnail=fm.get("thumbnail", ""),
+                ),
+                method=c.method or "GET",
+                request_body=c.request_body or "",
+                request_headers=dict(c.request_headers or {}),
+                pagination=c.pagination,
+                max_pages=1,
                 services=services, adaptive=False,
             )
         elif type == "embedded":
@@ -637,8 +652,24 @@ async def preview_fragment_refined(request: Request):
         if res.api_endpoints:
             response_data["api"] = {}
             for idx, c in enumerate(res.api_endpoints):
+                fm = c.field_mapping or {}
                 req = ScrapeRequest(
-                    url=c.url, strategy=FeedStrategy.JSON_API, services=services, adaptive=False,
+                    url=c.url, strategy=FeedStrategy.JSON_API,
+                    selectors=ScrapeSelectors(
+                        item=c.item_path,
+                        item_title=fm.get("title", ""),
+                        item_link=fm.get("link", ""),
+                        item_content=fm.get("content", ""),
+                        item_timestamp=fm.get("timestamp", ""),
+                        item_author=fm.get("author", ""),
+                        item_thumbnail=fm.get("thumbnail", ""),
+                    ),
+                    method=c.method or "GET",
+                    request_body=c.request_body or "",
+                    request_headers=dict(c.request_headers or {}),
+                    pagination=c.pagination,
+                    max_pages=1,
+                    services=services, adaptive=False,
                 )
                 try:
                     scrape = await run_scrape(req)
@@ -1598,7 +1629,43 @@ async def save(request: Request) -> RedirectResponse:
                 **_shared,
             )
         elif strategy == "json_api":
+            import json as _json
+            from app.models.schemas import PaginationSpec as _PaginationSpec
             url = f("url")
+            try:
+                req_headers = _json.loads(f("request_headers_json") or "{}") or {}
+            except ValueError:
+                req_headers = {}
+            pagination = None
+            pag_param = f("pagination_param")
+            if pag_param:
+                try:
+                    per_page = int(f("pagination_per_page") or "0")
+                except ValueError:
+                    per_page = 0
+                try:
+                    start = int(f("pagination_start") or "1")
+                except ValueError:
+                    start = 1
+                pagination = _PaginationSpec(
+                    location=f("pagination_location") or "body",
+                    param=pag_param,
+                    kind=f("pagination_kind") or "page",
+                    start=start,
+                    per_page=per_page,
+                    per_page_param=f("pagination_per_page_param"),
+                    has_more_path=f("pagination_has_more_path"),
+                    next_cursor_path=f("pagination_next_cursor_path"),
+                    total_pages_path=f("pagination_total_pages_path"),
+                )
+            try:
+                max_pages = max(1, min(50, int(f("max_pages") or "1")))
+            except ValueError:
+                max_pages = 1
+            try:
+                max_items = max(1, min(5000, int(f("max_items") or "250")))
+            except ValueError:
+                max_items = 250
             req = ScrapeRequest(
                 url=url,
                 strategy=FeedStrategy.JSON_API,
@@ -1609,6 +1676,12 @@ async def save(request: Request) -> RedirectResponse:
                     item_content=f("item_content"),
                     item_timestamp=f("item_timestamp"),
                 ),
+                method=(f("method") or "GET").upper(),
+                request_body=f("request_body"),
+                request_headers=req_headers,
+                pagination=pagination,
+                max_pages=max_pages,
+                max_items=max_items,
                 services=services,
                 adaptive=False,
             )

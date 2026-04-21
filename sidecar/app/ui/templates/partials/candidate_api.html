@@ -20,6 +20,33 @@
     </p>
   {% endif %}
 
+  {% if e.c.request_body or (e.c.method and e.c.method != 'GET') or e.c.pagination %}
+    <details class="candidate-request">
+      <summary class="text-secondary" style="font-size:12px;">
+        Replay details
+        {% if e.c.pagination and e.c.pagination.param %}
+          · paginates by <code>{{ e.c.pagination.param }}</code> ({{ e.c.pagination.kind }}, {{ e.c.pagination.location }})
+        {% endif %}
+      </summary>
+      <div class="request-body-view">
+        {% if e.c.method and e.c.method != 'GET' %}
+          <p class="text-secondary" style="font-size:12px;">
+            <strong>{{ e.c.method }}</strong> <code>{{ e.c.url }}</code>
+          </p>
+        {% endif %}
+        {% if e.c.request_body %}
+          <label class="text-secondary" style="font-size:12px;">Request body</label>
+          <pre class="text-mono" style="font-size:11px; max-height:180px; overflow:auto;">{{ e.c.request_body }}</pre>
+        {% endif %}
+        {% if e.c.request_headers %}
+          <label class="text-secondary" style="font-size:12px;">Replay headers</label>
+          <pre class="text-mono" style="font-size:11px;">{% for k, v in e.c.request_headers.items() %}{{ k }}: {{ v }}
+{% endfor %}</pre>
+        {% endif %}
+      </div>
+    </details>
+  {% endif %}
+
   {% if e.auto_preview %}
     <div id="preview-api-{{ e.index }}" class="preview-target" data-preview-url="{{ e.preview_url }}">
       <div class="skeleton skeleton-preview"></div>
@@ -63,6 +90,20 @@
           <input type="hidden" name="strategy" value="json_api">
           <input type="hidden" name="url" value="{{ e.c.url | e }}">
           <input type="hidden" name="source_url" value="{{ target_url | e }}">
+          <input type="hidden" name="method" value="{{ e.c.method or 'GET' }}">
+          <input type="hidden" name="request_body" value="{{ e.c.request_body | e }}">
+          <input type="hidden" name="request_headers_json" value="{{ (e.c.request_headers or {}) | tojson | e }}">
+          {% if e.c.pagination %}
+            <input type="hidden" name="pagination_location" value="{{ e.c.pagination.location }}">
+            <input type="hidden" name="pagination_param" value="{{ e.c.pagination.param }}">
+            <input type="hidden" name="pagination_kind" value="{{ e.c.pagination.kind }}">
+            <input type="hidden" name="pagination_start" value="{{ e.c.pagination.start }}">
+            <input type="hidden" name="pagination_per_page" value="{{ e.c.pagination.per_page }}">
+            <input type="hidden" name="pagination_per_page_param" value="{{ e.c.pagination.per_page_param }}">
+            <input type="hidden" name="pagination_has_more_path" value="{{ e.c.pagination.has_more_path }}">
+            <input type="hidden" name="pagination_next_cursor_path" value="{{ e.c.pagination.next_cursor_path }}">
+            <input type="hidden" name="pagination_total_pages_path" value="{{ e.c.pagination.total_pages_path }}">
+          {% endif %}
           <div class="field">
             <label for="path-api-{{ e.index }}">Item path <span class="text-tertiary">(dot notation)</span></label>
             <input type="text" id="path-api-{{ e.index }}" name="item_path"
@@ -99,6 +140,24 @@
             <label for="name-api-{{ e.index }}">Feed name</label>
             <input type="text" id="name-api-{{ e.index }}" name="name" required>
           </div>
+          {% if e.c.pagination and e.c.pagination.param %}
+            <div class="field-grid-2">
+              <div class="field">
+                <label for="maxpages-api-{{ e.index }}">Max pages per refresh</label>
+                <input type="number" id="maxpages-api-{{ e.index }}" name="max_pages"
+                       value="5" min="1" max="50">
+                <p class="field-hint">
+                  Paginates via <code>{{ e.c.pagination.param }}</code>. Stops early on
+                  <code>{{ e.c.pagination.has_more_path or 'empty page' }}</code>.
+                </p>
+              </div>
+              <div class="field">
+                <label for="maxitems-api-{{ e.index }}">Max items</label>
+                <input type="number" id="maxitems-api-{{ e.index }}" name="max_items"
+                       value="250" min="1" max="5000">
+              </div>
+            </div>
+          {% endif %}
           <div class="field">
             <label for="cadence-api-{{ e.index }}">Refresh cadence</label>
             <select id="cadence-api-{{ e.index }}" name="cadence">

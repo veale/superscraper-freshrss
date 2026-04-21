@@ -190,29 +190,116 @@ def _map_json_item(raw: dict, sel: ScrapeSelectors) -> ScrapeItem:
     )
 
 
+def _set_body_param(body_str: str, param: str, value: Any) -> str:
+    try:
+        parsed = json.loads(body_str) if body_str else {}
+    except (ValueError, TypeError):
+        return body_str
+    if isinstance(parsed, dict):
+        parsed[param] = value
+        return json.dumps(parsed)
+    return body_str
+
+
+def _set_query_param(url: str, param: str, value: Any) -> str:
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+    parsed = urlparse(url)
+    qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    qs[param] = str(value)
+    return urlunparse(parsed._replace(query=urlencode(qs)))
+
+
 async def _scrape_json_api(
     req: ScrapeRequest, services: ServiceConfig
 ) -> tuple[list[ScrapeItem], list[str]]:
     warnings: list[str] = []
+    method = (req.method or "GET").upper()
+    headers = {**_HEADERS, "Accept": "application/json", **(req.request_headers or {})}
+    pag = req.pagination
+    max_pages = max(1, req.max_pages)
+    max_items = max(1, req.max_items)
+    item_path = req.selectors.item
+
+    all_items: list[dict] = []
+    cursor: str | None = None
+    page_idx = 0
+
     async with httpx.AsyncClient(
-        headers={**_HEADERS, "Accept": "application/json"},
-        follow_redirects=True,
-        timeout=req.timeout,
+        headers=headers, follow_redirects=True, timeout=req.timeout,
     ) as client:
-        try:
-            resp = await client.get(req.url)
-            data = resp.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            return [], [f"JSON API fetch error: {exc}"]
+        current_url = req.url
+        current_body = req.request_body
 
-    arr = _dot_get(data, req.selectors.item)
-    if not isinstance(arr, list):
-        warnings.append(
-            f"item path '{req.selectors.item}' did not resolve to a list"
-        )
-        return [], warnings
+        while page_idx < max_pages and len(all_items) < max_items:
+            if pag and page_idx > 0:
+                if pag.kind == "cursor":
+                    if cursor is None:
+                        break
+                    if pag.location == "body":
+                        current_body = _set_body_param(req.request_body, pag.param, cursor)
+                    else:
+                        current_url = _set_query_param(req.url, pag.param, cursor)
+                elif pag.kind == "offset":
+                    step = pag.per_page or 25
+                    next_val = pag.start + page_idx * step
+                    if pag.location == "body":
+                        current_body = _set_body_param(req.request_body, pag.param, next_val)
+                    else:
+                        current_url = _set_query_param(req.url, pag.param, next_val)
+                else:  # "page"
+                    next_val = pag.start + page_idx
+                    if pag.location == "body":
+                        current_body = _set_body_param(req.request_body, pag.param, next_val)
+                    else:
+                        current_url = _set_query_param(req.url, pag.param, next_val)
 
-    items = [_map_json_item(it, req.selectors) for it in arr[:100] if isinstance(it, dict)]
+            try:
+                if method == "POST":
+                    body_bytes = current_body.encode("utf-8") if current_body else b""
+                    post_headers = dict(headers)
+                    post_headers.setdefault("Content-Type", "application/json")
+                    resp = await client.post(current_url, content=body_bytes, headers=post_headers)
+                else:
+                    resp = await client.get(current_url)
+                data = resp.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                warnings.append(f"JSON API fetch error on page {page_idx + 1}: {exc}")
+                break
+
+            arr = _dot_get(data, item_path)
+            if not isinstance(arr, list):
+                if page_idx == 0:
+                    warnings.append(
+                        f"item path '{item_path}' did not resolve to a list"
+                    )
+                break
+            if not arr:
+                break
+
+            all_items.extend(it for it in arr if isinstance(it, dict))
+            page_idx += 1
+
+            if not pag:
+                break
+
+            if pag.has_more_path:
+                has_more = _dot_get(data, pag.has_more_path)
+                if not has_more:
+                    break
+            if pag.total_pages_path:
+                total_pages = _dot_get(data, pag.total_pages_path)
+                if isinstance(total_pages, int) and page_idx >= total_pages:
+                    break
+            if pag.kind == "cursor":
+                cursor_val = _dot_get(data, pag.next_cursor_path) if pag.next_cursor_path else None
+                if not cursor_val:
+                    break
+                cursor = str(cursor_val)
+            elif pag.per_page and len(arr) < pag.per_page:
+                break
+
+    items = [_map_json_item(it, req.selectors) for it in all_items[:max_items]]
     return items, warnings
 
 
