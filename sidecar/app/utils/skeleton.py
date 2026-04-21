@@ -14,7 +14,12 @@ _KEEP_ATTRS = frozenset({"class", "id", "role", "itemprop", "data-testid"})
 # Preserve text inside these tags — they're usually titles / links and let the
 # LLM map class names to actual content. Without this, the skeleton collapses
 # every string to [text:N] and the model has to guess from structure alone.
-_KEEP_TEXT_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6", "a", "time"})
+_KEEP_TEXT_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6", "a", "time", "title"})
+# Inline wrappers that should inherit "keep text" from a nearby keep-tag ancestor.
+# Real-world markup often buries title text: <a><span>Title</span></a> or
+# <h3><a><span>Title</span></a></h3>. Without this, the skeleton collapses the
+# title to [text:N] and the LLM has nothing to match the user's example against.
+_INLINE_WRAPPER_TAGS = frozenset({"span", "strong", "em", "b", "i"})
 _KEEP_TEXT_MAX_CHARS = 140
 
 
@@ -64,9 +69,27 @@ def _strip_attrs(el) -> None:
     el.attrib.update(keep)
 
 
-def _collapse_text(el) -> None:
+def _should_keep_text(el) -> bool:
     tag = el.tag if isinstance(el.tag, str) else ""
-    keep = tag in _KEEP_TEXT_TAGS
+    if tag in _KEEP_TEXT_TAGS:
+        return True
+    if tag not in _INLINE_WRAPPER_TAGS:
+        return False
+    parent = el.getparent()
+    hops = 0
+    while parent is not None and hops < 3:
+        ptag = parent.tag if isinstance(parent.tag, str) else ""
+        if ptag in _KEEP_TEXT_TAGS:
+            return True
+        if ptag not in _INLINE_WRAPPER_TAGS:
+            return False
+        parent = parent.getparent()
+        hops += 1
+    return False
+
+
+def _collapse_text(el) -> None:
+    keep = _should_keep_text(el)
     if el.text and el.text.strip():
         text = el.text.strip()
         if keep and len(text) <= _KEEP_TEXT_MAX_CHARS:

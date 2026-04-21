@@ -106,7 +106,8 @@
       "Bash(python -m pytest tests/test_refinement_pipeline.py::test_llm_xpath_hunt_prompt_contains_preserved_text -q)",
       "Bash(python -m pytest tests/ -x -q --deselect tests/test_refinement_pipeline.py::test_llm_xpath_hunt_prompt_contains_preserved_text)",
       "Bash(python -m pytest tests/ -q --deselect tests/test_refinement_pipeline.py::test_llm_xpath_hunt_prompt_contains_preserved_text --deselect tests/test_bridge_contract.py::test_bridge_generate_to_deploy_flow)",
-      "Bash(python -m pytest tests/test_refinement_pipeline.py tests/test_discover_results_page.py tests/test_analyzer.py -q --deselect tests/test_refinement_pipeline.py::test_llm_xpath_hunt_prompt_contains_preserved_text)"
+      "Bash(python -m pytest tests/test_refinement_pipeline.py tests/test_discover_results_page.py tests/test_analyzer.py -q --deselect tests/test_refinement_pipeline.py::test_llm_xpath_hunt_prompt_contains_preserved_text)",
+      "Bash(python -m pytest tests/ -k skeleton -x -q)"
     ],
     "additionalDirectories": [
       "/tmp",
