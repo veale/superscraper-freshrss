@@ -401,6 +401,83 @@ def render_api_map_prompt(
     )
 
 
+# ── Recipe debug (Round 3) ────────────────────────────────────────────────────
+
+DEBUG_RECIPE_SYSTEM = (
+    "You are debugging a failing feed recipe. The user built an extraction "
+    "recipe (selectors or field mapping) that previewed 0 items or the wrong "
+    "items. Given the current recipe, the observed preview output (errors, "
+    "warnings, item counts), and a sample of the source content (HTML for "
+    "xpath strategies, JSON for json_api / embedded_json), propose a diff: "
+    "only the fields you want to change. Keep your changes minimal — do not "
+    "rewrite fields that already work. Explain your reasoning in <= 2 "
+    "sentences. If the source sample looks insufficient to debug (e.g. "
+    "placeholder HTML, auth wall), say so in caveats rather than guessing. "
+    "Return JSON only."
+)
+
+DEBUG_RECIPE_USER_TEMPLATE = """\
+STRATEGY: {strategy}
+FEED URL: {url}
+CURRENT RECIPE:
+{recipe}
+
+PREVIEW RESULT:
+items_returned: {item_count}
+errors: {errors}
+warnings: {warnings}
+sample_items_extracted: {sample_items}
+
+SOURCE SAMPLE (truncated):
+{source_sample}
+
+Return JSON:
+{{
+  "diff": {{
+    // Include ONLY fields you want to change. Omit ones that look correct.
+    // For xpath: "item_selector", "title_selector", "link_selector",
+    //   "content_selector", "timestamp_selector".
+    // For json_api / embedded_json: "item_path", "item_title", "item_link",
+    //   "item_content", "item_timestamp".
+    // For json_api also: "request_body" (raw JSON string) or
+    //   "request_headers" (object, will be merged) if the request shape is wrong.
+  }},
+  "reasoning": "<= 2 sentences on what was wrong and how the diff fixes it",
+  "caveats": ["e.g. source sample was truncated and may miss items"]
+}}
+"""
+
+
+def render_debug_recipe_prompt(
+    *,
+    strategy: str,
+    url: str,
+    recipe: dict,
+    item_count: int,
+    errors: list[str],
+    warnings: list[str],
+    sample_items: list[dict],
+    source_sample: str,
+) -> tuple[str, str]:
+    """Render the debug-recipe prompt.
+
+    *source_sample* is caller-truncated — HTML for xpath, JSON string for
+    json_api/embedded_json. We clamp to 12_000 chars here as a safety net so an
+    accidentally-enormous sample doesn't blow the context window.
+    """
+    trimmed_items = _truncate_values(sample_items[:3], max_str=200) if sample_items else []
+    return DEBUG_RECIPE_SYSTEM, DEBUG_RECIPE_USER_TEMPLATE.format(
+        strategy=strategy,
+        url=url,
+        recipe=json.dumps(recipe, ensure_ascii=False, indent=2),
+        item_count=item_count,
+        errors=json.dumps(errors or [], ensure_ascii=False),
+        warnings=json.dumps(warnings or [], ensure_ascii=False),
+        sample_items=json.dumps(trimmed_items, ensure_ascii=False),
+        source_sample=(source_sample or "(not captured)")[:12_000],
+    )
+
+
 def _xp_summary(candidates: list[XPathCandidate]) -> str:
     if not candidates:
         return "none"

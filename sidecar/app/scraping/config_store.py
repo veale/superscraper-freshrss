@@ -63,6 +63,21 @@ def load_config(prefix: str, config_id: str) -> dict | None:
         return None
 
 
+def update_config(prefix: str, config_id: str, payload: dict) -> bool:
+    """Overwrite an existing config in place. Returns False if *config_id*
+    is unsafe or not present."""
+    if not _safe(config_id):
+        return False
+    p = _config_dir(prefix) / f"{config_id}.json"
+    if not p.exists():
+        return False
+    tmp = p.with_suffix(".tmp")
+    payload = {**payload, "cache_key": config_id}
+    tmp.write_text(json.dumps(payload))
+    os.replace(tmp, p)
+    return True
+
+
 def delete_config(prefix: str, config_id: str) -> bool:
     if not _safe(config_id):
         return False

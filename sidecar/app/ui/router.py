@@ -1928,6 +1928,358 @@ async def feed_set_backend(request: Request, feed_id: str) -> RedirectResponse:
     return RedirectResponse("/feeds", status_code=303)
 
 
+def _build_edit_scrape_request(
+    feed: dict, form_values: dict, services
+):
+    """Reconstruct a ScrapeRequest from the recipe-editor form for the given feed.
+
+    *form_values* is a plain {name: str} dict (caller flattened the form data).
+    Returns (req, error). `error` is non-empty when the form is malformed."""
+    import json as _json
+    from app.models.schemas import (
+        FeedStrategy, PaginationSpec, ScrapeRequest, ScrapeSelectors,
+    )
+
+    strategy = feed.get("strategy", "")
+    url = form_values.get("url", "").strip() or feed.get("source_url", "")
+    if strategy == "json_api":
+        try:
+            req_headers = _json.loads(form_values.get("request_headers_json") or "{}") or {}
+        except ValueError:
+            req_headers = {}
+        pagination = None
+        pag_param = form_values.get("pagination_param", "").strip()
+        if pag_param:
+            try:
+                per_page = int(form_values.get("pagination_per_page") or "0")
+            except ValueError:
+                per_page = 0
+            try:
+                start = int(form_values.get("pagination_start") or "1")
+            except ValueError:
+                start = 1
+            pagination = PaginationSpec(
+                location=form_values.get("pagination_location") or "body",
+                param=pag_param,
+                kind=form_values.get("pagination_kind") or "page",
+                start=start,
+                per_page=per_page,
+                per_page_param=form_values.get("pagination_per_page_param", ""),
+                has_more_path=form_values.get("pagination_has_more_path", ""),
+                next_cursor_path=form_values.get("pagination_next_cursor_path", ""),
+                total_pages_path=form_values.get("pagination_total_pages_path", ""),
+            )
+        try:
+            max_pages = max(1, min(50, int(form_values.get("max_pages") or "1")))
+        except ValueError:
+            max_pages = 1
+        try:
+            max_items = max(1, min(5000, int(form_values.get("max_items") or "250")))
+        except ValueError:
+            max_items = 250
+        return ScrapeRequest(
+            url=url,
+            strategy=FeedStrategy.JSON_API,
+            selectors=ScrapeSelectors(
+                item=form_values.get("item_path", ""),
+                item_title=form_values.get("item_title", ""),
+                item_link=form_values.get("item_link", ""),
+                item_content=form_values.get("item_content", ""),
+                item_timestamp=form_values.get("item_timestamp", ""),
+            ),
+            method=(form_values.get("method") or "GET").upper(),
+            request_body=form_values.get("request_body", ""),
+            request_headers=req_headers,
+            pagination=pagination,
+            max_pages=max_pages,
+            max_items=max_items,
+            services=services,
+            adaptive=False,
+        ), ""
+    if strategy == "xpath":
+        return ScrapeRequest(
+            url=url,
+            strategy=FeedStrategy.XPATH,
+            selectors=ScrapeSelectors(
+                item=form_values.get("item_selector", ""),
+                item_title=form_values.get("title_selector", ""),
+                item_link=form_values.get("link_selector", ""),
+                item_content=form_values.get("content_selector", ""),
+                item_timestamp=form_values.get("timestamp_selector", ""),
+            ),
+            services=services,
+            adaptive=False,
+        ), ""
+    if strategy == "embedded_json":
+        return ScrapeRequest(
+            url=url,
+            strategy=FeedStrategy.EMBEDDED_JSON,
+            selectors=ScrapeSelectors(
+                item=form_values.get("path", ""),
+                item_title=form_values.get("item_title", ""),
+                item_link=form_values.get("item_link", ""),
+                item_content=form_values.get("item_content", ""),
+                item_timestamp=form_values.get("item_timestamp", ""),
+            ),
+            services=services,
+            adaptive=False,
+        ), ""
+    return None, f"Editing strategy '{strategy}' is not supported yet."
+
+
+def _recipe_from_config(cfg: dict) -> dict:
+    """Flatten a saved ScrapeRequest config into the recipe dict the editor /
+    debug prompt uses. The keys mirror the editor form field names."""
+    sel = cfg.get("selectors") or {}
+    strategy = cfg.get("strategy", "")
+    if strategy == "json_api":
+        out = {
+            "item_path": sel.get("item", ""),
+            "item_title": sel.get("item_title", ""),
+            "item_link": sel.get("item_link", ""),
+            "item_content": sel.get("item_content", ""),
+            "item_timestamp": sel.get("item_timestamp", ""),
+            "method": cfg.get("method", "GET"),
+            "request_body": cfg.get("request_body", ""),
+            "request_headers": cfg.get("request_headers", {}),
+        }
+        if cfg.get("pagination"):
+            out["pagination"] = cfg["pagination"]
+        return out
+    if strategy == "xpath":
+        return {
+            "item_selector": sel.get("item", ""),
+            "title_selector": sel.get("item_title", ""),
+            "link_selector": sel.get("item_link", ""),
+            "content_selector": sel.get("item_content", ""),
+            "timestamp_selector": sel.get("item_timestamp", ""),
+        }
+    if strategy == "embedded_json":
+        return {
+            "path": sel.get("item", ""),
+            "item_title": sel.get("item_title", ""),
+            "item_link": sel.get("item_link", ""),
+            "item_content": sel.get("item_content", ""),
+            "item_timestamp": sel.get("item_timestamp", ""),
+        }
+    return {}
+
+
+async def _fetch_source_sample(req, max_bytes: int = 12_000) -> str:
+    """Grab a rough source sample (HTML for xpath/embedded_json, JSON for
+    json_api) purely for the LLM debug prompt. Best-effort; never raises."""
+    import httpx
+    from app.models.schemas import FeedStrategy
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20) as c:
+            if req.strategy == FeedStrategy.JSON_API:
+                method = (req.method or "GET").upper()
+                if method == "POST":
+                    resp = await c.post(
+                        req.url,
+                        content=req.request_body or None,
+                        headers=req.request_headers or None,
+                    )
+                else:
+                    resp = await c.get(req.url, headers=req.request_headers or None)
+            else:
+                resp = await c.get(req.url)
+            return resp.text[:max_bytes]
+    except Exception as exc:
+        return f"(source fetch failed: {exc})"
+
+
+@router.get("/feeds/{feed_id}/edit", response_class=HTMLResponse)
+async def feed_edit(request: Request, feed_id: str) -> HTMLResponse:
+    from app.ui.feeds_store import get_feeds_store
+    from app.scraping.config_store import load_config
+
+    store = get_feeds_store()
+    feed = store.get(feed_id)
+    if feed is None:
+        request.session["flash"] = {"type": "error", "message": "Feed not found."}
+        return RedirectResponse("/feeds", status_code=303)
+
+    strategy = feed.get("strategy", "")
+    cfg: dict = {}
+    if strategy == "rss":
+        request.session["flash"] = {
+            "type": "info",
+            "message": "RSS feeds don't have an editable recipe — change backend or cadence on the feeds page instead.",
+        }
+        return RedirectResponse("/feeds", status_code=303)
+    config_id = feed.get("config_id", "")
+    if not config_id:
+        request.session["flash"] = {"type": "error", "message": "No scrape config for this feed."}
+        return RedirectResponse("/feeds", status_code=303)
+    cfg = load_config("scrape", config_id) or {}
+    recipe = _recipe_from_config(cfg)
+    has_llm = _llm_config() is not None
+    return templates.TemplateResponse(
+        request,
+        "feed_edit.html",
+        _ctx(
+            request,
+            title=f"Edit {feed.get('name', 'feed')}",
+            feed=feed,
+            cfg=cfg,
+            recipe=recipe,
+            has_llm=has_llm,
+        ),
+    )
+
+
+@router.post("/feeds/{feed_id}/preview-edits")
+async def feed_preview_edits(request: Request, feed_id: str) -> JSONResponse:
+    """Run a live preview of the recipe currently in the editor form. Does not
+    persist. Returns JSON so the editor can render results inline."""
+    from app.ui.feeds_store import get_feeds_store
+    from app.scraping.scrape import run_scrape
+
+    store = get_feeds_store()
+    feed = store.get(feed_id)
+    if feed is None:
+        return JSONResponse({"error": "Feed not found"}, status_code=404)
+
+    form = await request.form()
+    form_values = {k: str(v) for k, v in form.items()}
+    services = _service_config()
+    req, err = _build_edit_scrape_request(feed, form_values, services)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    req.max_pages = 1
+    req.max_items = 25
+    try:
+        result = await run_scrape(req)
+    except Exception as exc:
+        return JSONResponse({"error": f"Preview failed: {exc}"}, status_code=500)
+    return JSONResponse({
+        "item_count": result.item_count,
+        "items": [
+            {
+                "title": it.title, "link": it.link, "content": it.content[:200],
+                "timestamp": it.timestamp,
+            }
+            for it in result.items[:10]
+        ],
+        "errors": result.errors,
+        "warnings": result.warnings,
+        "fetch_backend_used": result.fetch_backend_used,
+    })
+
+
+@router.post("/feeds/{feed_id}/save-edits")
+async def feed_save_edits(request: Request, feed_id: str) -> RedirectResponse:
+    """Persist the edited recipe over the existing scrape config."""
+    from pathlib import Path
+    from app.ui.feeds_store import get_feeds_store
+    from app.scraping.config_store import update_config
+
+    store = get_feeds_store()
+    feed = store.get(feed_id)
+    if feed is None:
+        request.session["flash"] = {"type": "error", "message": "Feed not found."}
+        return RedirectResponse("/feeds", status_code=303)
+    config_id = feed.get("config_id", "")
+    if not config_id:
+        request.session["flash"] = {"type": "error", "message": "No scrape config for this feed."}
+        return RedirectResponse("/feeds", status_code=303)
+
+    form = await request.form()
+    form_values = {k: str(v) for k, v in form.items()}
+    services = _service_config()
+    req, err = _build_edit_scrape_request(feed, form_values, services)
+    if err:
+        request.session["flash"] = {"type": "error", "message": err}
+        return RedirectResponse(f"/feeds/{feed_id}/edit", status_code=303)
+    ok = update_config("scrape", config_id, req.model_dump())
+    if not ok:
+        request.session["flash"] = {"type": "error", "message": "Could not update scrape config on disk."}
+        return RedirectResponse(f"/feeds/{feed_id}/edit", status_code=303)
+
+    # Invalidate Atom cache + feed error state so the next refresh reflects edits.
+    cached = feed.get("cached_atom_path", "")
+    if cached:
+        try:
+            Path(cached).unlink(missing_ok=True)
+        except Exception:
+            pass
+    store.update(feed_id, last_error="", consecutive_empty_refreshes=0)
+
+    request.session["flash"] = {"type": "success", "message": "Recipe saved. Next refresh will use it."}
+    return RedirectResponse(f"/feeds/{feed_id}/edit", status_code=303)
+
+
+@router.post("/feeds/{feed_id}/debug")
+async def feed_debug(request: Request, feed_id: str) -> JSONResponse:
+    """Ship the current recipe + preview result + source sample to the LLM and
+    ask for a diff. The editor applies the diff client-side so the user can
+    preview and accept/reject before saving."""
+    from app.ui.feeds_store import get_feeds_store
+    from app.scraping.scrape import run_scrape
+    from app.llm.analyzer import debug_recipe
+
+    llm = _llm_config()
+    if llm is None:
+        return JSONResponse({"error": "LLM not configured. Set endpoint + API key in Settings."}, status_code=400)
+
+    store = get_feeds_store()
+    feed = store.get(feed_id)
+    if feed is None:
+        return JSONResponse({"error": "Feed not found"}, status_code=404)
+
+    form = await request.form()
+    form_values = {k: str(v) for k, v in form.items()}
+    services = _service_config()
+    req, err = _build_edit_scrape_request(feed, form_values, services)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    req.max_pages = 1
+    req.max_items = 10
+
+    try:
+        preview = await run_scrape(req)
+    except Exception as exc:
+        preview = None
+        preview_err = str(exc)
+    else:
+        preview_err = ""
+
+    sample_items = []
+    item_count = 0
+    errors: list[str] = [preview_err] if preview_err else []
+    warnings: list[str] = []
+    if preview is not None:
+        item_count = preview.item_count
+        errors.extend(preview.errors)
+        warnings.extend(preview.warnings)
+        sample_items = [
+            {"title": it.title, "link": it.link,
+             "content": (it.content or "")[:200], "timestamp": it.timestamp}
+            for it in preview.items[:3]
+        ]
+
+    source_sample = await _fetch_source_sample(req)
+    recipe = {k: v for k, v in form_values.items() if k not in ("name", "cadence")}
+    result = await debug_recipe(
+        strategy=feed.get("strategy", ""),
+        url=req.url,
+        recipe=recipe,
+        item_count=item_count,
+        errors=errors,
+        warnings=warnings,
+        sample_items=sample_items,
+        source_sample=source_sample,
+        llm=llm,
+    )
+    return JSONResponse({
+        "item_count": item_count,
+        "preview_errors": errors,
+        "preview_warnings": warnings,
+        **result,
+    })
+
+
 @router.get("/feeds.opml")
 async def feeds_opml(request: Request) -> Response:
     """Export all saved feeds as OPML for FreshRSS / other readers.

@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from app.llm import LLMAuth, LLMError, LLMMalformed, LLMTimeout
 from app.llm.client import LLMClient
-from app.llm.prompts import render_api_map_prompt, render_bridge_prompt, render_strategy_prompt
+from app.llm.prompts import (
+    render_api_map_prompt,
+    render_bridge_prompt,
+    render_debug_recipe_prompt,
+    render_strategy_prompt,
+)
 from app.models.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -144,6 +149,76 @@ async def map_api_fields(
     return {
         "item_path": str(raw.get("item_path", "") or ""),
         "field_mapping": {str(k): str(v) for k, v in fm.items() if v},
+        "reasoning": str(raw.get("reasoning", "")),
+        "caveats": [str(c) for c in caveats],
+        "tokens_used": result.tokens_used,
+        "error": None,
+    }
+
+
+async def debug_recipe(
+    *,
+    strategy: str,
+    url: str,
+    recipe: dict,
+    item_count: int,
+    errors: list[str],
+    warnings: list[str],
+    sample_items: list[dict],
+    source_sample: str,
+    llm,
+    capture: dict | None = None,
+) -> dict:
+    """Send a failing recipe + preview output to the LLM and get back a diff.
+
+    Returns {'diff': dict, 'reasoning': str, 'caveats': list[str],
+    'tokens_used': int|None, 'error': str|None}.
+    """
+    client = LLMClient(
+        endpoint=llm.endpoint, api_key=llm.api_key,
+        model=llm.model, timeout=llm.timeout,
+    )
+    system, user = render_debug_recipe_prompt(
+        strategy=strategy,
+        url=url,
+        recipe=recipe,
+        item_count=item_count,
+        errors=errors,
+        warnings=warnings,
+        sample_items=sample_items,
+        source_sample=source_sample,
+    )
+    try:
+        result = await client.chat_completion(system, user, capture=capture)
+    except LLMTimeout as exc:
+        return {"diff": {}, "reasoning": "", "caveats": [], "tokens_used": None,
+                "error": f"LLM timeout: {exc}"}
+    except LLMAuth as exc:
+        return {"diff": {}, "reasoning": "", "caveats": [], "tokens_used": None,
+                "error": f"LLM auth error: {exc}"}
+    except LLMMalformed as exc:
+        return {"diff": {}, "reasoning": "", "caveats": [], "tokens_used": None,
+                "error": f"LLM malformed response: {exc}"}
+    except LLMError as exc:
+        return {"diff": {}, "reasoning": "", "caveats": [], "tokens_used": None,
+                "error": f"LLM error: {exc}"}
+
+    raw = result.content if isinstance(result.content, dict) else {}
+    diff = raw.get("diff") or {}
+    if not isinstance(diff, dict):
+        diff = {}
+    caveats = raw.get("caveats") or []
+    if not isinstance(caveats, list):
+        caveats = []
+    # Sanitise diff values — request_headers must be a dict, everything else a string.
+    clean: dict = {}
+    for k, v in diff.items():
+        if k == "request_headers" and isinstance(v, dict):
+            clean[k] = {str(kk): str(vv) for kk, vv in v.items()}
+        elif isinstance(v, (str, int, float)):
+            clean[k] = str(v)
+    return {
+        "diff": clean,
         "reasoning": str(raw.get("reasoning", "")),
         "caveats": [str(c) for c in caveats],
         "tokens_used": result.tokens_used,

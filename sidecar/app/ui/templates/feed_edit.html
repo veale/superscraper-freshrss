@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="results-page">
+  <div class="results-header">
+    <h1 class="results-title">Edit recipe: {{ feed.name }}</h1>
+    <p class="text-secondary" style="font-size:13px;">
+      Tweak selectors or the request shape, preview live, ask the LLM to debug
+      empty results, then save. The scheduled refresh picks up your changes on
+      its next run.
+    </p>
+    <div class="results-url-row">
+      <code class="results-url text-mono text-secondary">
+        {{ feed.strategy }} · {{ feed.source_url or cfg.url }}
+      </code>
+    </div>
+  </div>
+
+  <a href="/feeds" class="nav-link">&larr; Back to feeds</a>
+
+  <div class="workbench-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top:16px;">
+    <div class="workbench-editor card">
+      <h2>Recipe</h2>
+
+      <form id="fe-form" onsubmit="return fePreview(event)">
+        <div class="field">
+          <label>URL</label>
+          <input type="url" name="url" value="{{ cfg.url }}" required>
+        </div>
+
+        {% if feed.strategy == "json_api" %}
+          <div class="field">
+            <label>Method</label>
+            <select name="method">
+              <option value="GET"  {% if recipe.method == 'GET' %}selected{% endif %}>GET</option>
+              <option value="POST" {% if recipe.method == 'POST' %}selected{% endif %}>POST</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Request body (raw)</label>
+            <textarea name="request_body" rows="8" class="text-mono" style="width:100%; font-size:12px;">{{ recipe.request_body }}</textarea>
+          </div>
+          <div class="field">
+            <label>Request headers (JSON dict)</label>
+            <textarea name="request_headers_json" rows="3" class="text-mono" style="width:100%; font-size:12px;">{{ (recipe.request_headers or {}) | tojson }}</textarea>
+          </div>
+          <h3>Mapping</h3>
+          <div class="field">
+            <label>Item path (dot notation)</label>
+            <input type="text" name="item_path" value="{{ recipe.item_path }}">
+          </div>
+          <div class="field-grid-2">
+            <div class="field"><label>Title</label><input type="text" name="item_title" value="{{ recipe.item_title }}"></div>
+            <div class="field"><label>Link</label><input type="text" name="item_link" value="{{ recipe.item_link }}"></div>
+            <div class="field"><label>Content</label><input type="text" name="item_content" value="{{ recipe.item_content }}"></div>
+            <div class="field"><label>Timestamp</label><input type="text" name="item_timestamp" value="{{ recipe.item_timestamp }}"></div>
+          </div>
+          {% if recipe.pagination %}
+            <details>
+              <summary>Pagination (saved)</summary>
+              <div class="field-grid-2">
+                <div class="field"><label>Location</label><input type="text" name="pagination_location" value="{{ recipe.pagination.location }}"></div>
+                <div class="field"><label>Param</label><input type="text" name="pagination_param" value="{{ recipe.pagination.param }}"></div>
+                <div class="field"><label>Kind</label><input type="text" name="pagination_kind" value="{{ recipe.pagination.kind }}"></div>
+                <div class="field"><label>Start</label><input type="text" name="pagination_start" value="{{ recipe.pagination.start }}"></div>
+                <div class="field"><label>Per page</label><input type="text" name="pagination_per_page" value="{{ recipe.pagination.per_page }}"></div>
+                <div class="field"><label>Per page param</label><input type="text" name="pagination_per_page_param" value="{{ recipe.pagination.per_page_param }}"></div>
+                <div class="field"><label>Has-more path</label><input type="text" name="pagination_has_more_path" value="{{ recipe.pagination.has_more_path }}"></div>
+                <div class="field"><label>Next-cursor path</label><input type="text" name="pagination_next_cursor_path" value="{{ recipe.pagination.next_cursor_path }}"></div>
+                <div class="field"><label>Total-pages path</label><input type="text" name="pagination_total_pages_path" value="{{ recipe.pagination.total_pages_path }}"></div>
+              </div>
+            </details>
+          {% endif %}
+        {% elif feed.strategy == "xpath" %}
+          <h3>Selectors</h3>
+          <div class="field">
+            <label>Item selector</label>
+            <input type="text" name="item_selector" value="{{ recipe.item_selector }}" class="text-mono">
+          </div>
+          <div class="field-grid-2">
+            <div class="field"><label>Title</label><input type="text" name="title_selector" value="{{ recipe.title_selector }}" class="text-mono"></div>
+            <div class="field"><label>Link</label><input type="text" name="link_selector" value="{{ recipe.link_selector }}" class="text-mono"></div>
+            <div class="field"><label>Content</label><input type="text" name="content_selector" value="{{ recipe.content_selector }}" class="text-mono"></div>
+            <div class="field"><label>Timestamp</label><input type="text" name="timestamp_selector" value="{{ recipe.timestamp_selector }}" class="text-mono"></div>
+          </div>
+        {% elif feed.strategy == "embedded_json" %}
+          <h3>Selectors</h3>
+          <div class="field">
+            <label>Dot path to item list</label>
+            <input type="text" name="path" value="{{ recipe.path }}" class="text-mono">
+          </div>
+          <div class="field-grid-2">
+            <div class="field"><label>Title field</label><input type="text" name="item_title" value="{{ recipe.item_title }}"></div>
+            <div class="field"><label>Link field</label><input type="text" name="item_link" value="{{ recipe.item_link }}"></div>
+            <div class="field"><label>Content field</label><input type="text" name="item_content" value="{{ recipe.item_content }}"></div>
+            <div class="field"><label>Timestamp field</label><input type="text" name="item_timestamp" value="{{ recipe.item_timestamp }}"></div>
+          </div>
+        {% endif %}
+
+        <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+          <button type="submit" class="btn btn-primary">Run preview</button>
+          {% if has_llm %}
+            <button type="button" class="btn btn-secondary" onclick="feDebug()">
+              Debug with LLM
+            </button>
+          {% endif %}
+          <button type="button" class="btn btn-primary" onclick="feSave()">
+            Save recipe
+          </button>
+        </div>
+      </form>
+
+      <form id="fe-save-form" method="post" action="/feeds/{{ feed.id }}/save-edits" style="display:none;">
+        <!-- Filled in by feSave() from the live form state. -->
+      </form>
+    </div>
+
+    <div class="workbench-preview card">
+      <h2>Preview</h2>
+      <div id="fe-preview-target">
+        <p class="text-secondary">Press "Run preview" to replay with your current recipe.</p>
+      </div>
+
+      <h3 style="margin-top:16px;">LLM debug</h3>
+      <div id="fe-debug-target">
+        <p class="text-secondary">
+          {% if has_llm %}
+            Press "Debug with LLM" to send the recipe + current preview to the LLM for a diff suggestion.
+          {% else %}
+            Configure an LLM endpoint in <a href="/settings">Settings</a> to enable debug-with-LLM.
+          {% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function _feForm() { return document.getElementById('fe-form'); }
+
+async function fePreview(ev) {
+  if (ev) ev.preventDefault();
+  const target = document.getElementById('fe-preview-target');
+  target.innerHTML = '<p class="text-secondary">Running…</p>';
+  const fd = new FormData(_feForm());
+  const resp = await fetch('/feeds/{{ feed.id }}/preview-edits', { method: 'POST', body: fd });
+  const data = await resp.json();
+  if (data.error) {
+    target.innerHTML = '<div class="preview-error">' + data.error + '</div>';
+    return false;
+  }
+  let html = '<p><strong>' + data.item_count + '</strong> items (backend: ' + (data.fetch_backend_used || '?') + ')</p>';
+  if ((data.errors || []).length) html += '<div class="preview-error">' + data.errors.join('<br>') + '</div>';
+  if ((data.warnings || []).length) html += '<div class="alert alert-warning">' + data.warnings.join('<br>') + '</div>';
+  if ((data.items || []).length) {
+    html += '<ul>';
+    for (const it of data.items) {
+      html += '<li><strong>' + (it.title || '(no title)') + '</strong>';
+      if (it.link) html += '<br><code>' + it.link + '</code>';
+      if (it.timestamp) html += '<br><small>' + it.timestamp + '</small>';
+      html += '</li>';
+    }
+    html += '</ul>';
+  }
+  target.innerHTML = html;
+  return false;
+}
+
+async function feDebug() {
+  const target = document.getElementById('fe-debug-target');
+  target.innerHTML = '<p class="text-secondary">Asking LLM…</p>';
+  const fd = new FormData(_feForm());
+  const resp = await fetch('/feeds/{{ feed.id }}/debug', { method: 'POST', body: fd });
+  const data = await resp.json();
+  if (data.error) {
+    target.innerHTML = '<div class="preview-error">' + data.error + '</div>';
+    return;
+  }
+  const diff = data.diff || {};
+  let html = '<p class="text-secondary">Preview returned <strong>' + (data.item_count || 0) + '</strong> items.</p>';
+  if (data.reasoning) html += '<p><em>' + data.reasoning + '</em></p>';
+  if ((data.caveats || []).length) {
+    html += '<div class="alert alert-warning"><strong>Caveats:</strong><ul>';
+    for (const c of data.caveats) html += '<li>' + c + '</li>';
+    html += '</ul></div>';
+  }
+  const keys = Object.keys(diff);
+  if (!keys.length) {
+    html += '<p class="text-secondary">LLM proposed no changes.</p>';
+  } else {
+    html += '<p><strong>Proposed diff:</strong></p><ul>';
+    for (const k of keys) {
+      const id = 'fe-diff-' + k.replace(/[^a-z0-9]/gi, '-');
+      const val = (typeof diff[k] === 'object') ? JSON.stringify(diff[k]) : String(diff[k]);
+      html += '<li><code>' + k + '</code> → <code>'
+            + val.replace(/</g, '&lt;')
+            + '</code> '
+            + '<button type="button" class="btn btn-sm btn-primary" onclick="feApplyDiffField(\'' + k + '\', ' + JSON.stringify(val) + ')">Apply</button>'
+            + '</li>';
+    }
+    html += '</ul>';
+    html += '<button type="button" class="btn btn-secondary" onclick="feApplyAllDiff(' + JSON.stringify(diff).replace(/"/g, '&quot;') + ')">Apply all</button>';
+  }
+  target.innerHTML = html;
+  target.dataset.diff = JSON.stringify(diff);
+}
+
+function feApplyDiffField(name, value) {
+  const el = _feForm().querySelector('[name="' + name + '"]');
+  if (!el) return;
+  if (name === 'request_headers') {
+    const ta = _feForm().querySelector('[name="request_headers_json"]');
+    if (ta) ta.value = value;
+    return;
+  }
+  el.value = value;
+}
+
+function feApplyAllDiff(diff) {
+  for (const [k, v] of Object.entries(diff)) {
+    const val = (typeof v === 'object') ? JSON.stringify(v) : String(v);
+    feApplyDiffField(k, val);
+  }
+}
+
+function feSave() {
+  const live = _feForm();
+  const save = document.getElementById('fe-save-form');
+  save.innerHTML = '';
+  const fd = new FormData(live);
+  for (const [k, v] of fd.entries()) {
+    const inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = k; inp.value = v;
+    save.appendChild(inp);
+  }
+  save.submit();
+}
+</script>
+{% endblock %}

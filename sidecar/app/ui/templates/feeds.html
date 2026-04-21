@@ -146,6 +146,9 @@
                   <button type="submit" class="btn btn-secondary btn-sm">Refresh now</button>
                 </form>
               {% endif %}
+              {% if feed.strategy != "rss" %}
+                <a href="/feeds/{{ feed.id }}/edit" class="btn btn-secondary btn-sm">Edit recipe</a>
+              {% endif %}
               <form method="post" action="/feeds/{{ feed.id }}/delete" class="feed-delete-form"
                     data-confirm="{{ ('Delete ' ~ feed.name ~ '?') | tojson | e }}">
                 <button type="submit" class="btn-link-danger">Delete</button>
